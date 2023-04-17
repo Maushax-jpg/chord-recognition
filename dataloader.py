@@ -1,7 +1,9 @@
 import os
 import re
 import pandas as pd
-import tqdm
+import numpy as np
+from tqdm import tqdm
+import chromagram
 
 def getBeatlesPaths(basepath_labels,basepath_audio):
     '''This function returns a list of tuples containing songname and paths to .mp3 and .chords files
@@ -35,6 +37,35 @@ def getBeatlesPaths(basepath_labels,basepath_audio):
             if not found:
                 print(f"songname not found: {songname}")
     return songs
+
+def getBeatlesChroma(songs,chroma_type='librosa'):
+    """creates a dataframe for a given list of beatles songs
+       a songlist contaings: songname,audiopath,labelpath
+    """
+    # create dataframe
+    chroma_labels = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","H"]
+    labels = ["label"]
+    labels.extend(chroma_labels)
+    chroma_df = pd.DataFrame(columns=labels)
+
+    for _,audio_path,label_path in tqdm(songs, desc="Loading..."):
+
+        chroma = chromagram.getChroma(audio_path,chroma_type=chroma_type)
+        df = pd.DataFrame(chroma,columns=chroma_labels)
+        df['label'] = ''
+        # parameters used by the deep Chroma Processors are 
+        # NFFT=8192, HOPSIZE=4410, FS=44100 -> 10 frames/second
+        df['time'] = np.linspace(0.1,len(chroma)*0.1,num=len(chroma))
+
+        # label chroma features by iterating over all annotated chords
+        labels_df = pd.read_csv(label_path,sep='\t',names=["tstart","tend","label"])
+        for _,col in labels_df.iterrows():
+            # access chroma features with time in chord annotation time interval 
+            df.loc[(df['time'] >= float(col['tstart'])) & (df['time']< float(col['tend'])),
+                        'label'] = col['label']
+        chroma_df = pd.concat([chroma_df,df[labels]])
+        chroma_df.reset_index(drop=True,inplace=True)
+    return chroma_df
 
 def getChordSequencesPaths(basepath):
     """ 
