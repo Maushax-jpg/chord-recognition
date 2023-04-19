@@ -5,6 +5,12 @@ import numpy as np
 from tqdm import tqdm
 import chromagram
 
+chord_labels_majmin = {'N':0,'C':1,'C#':2,'D':3,'D#':4,'E':5,'F':6,'F#':7,'G':8,'G#':9,'A':10,'A#':11,'B':12,
+    'C:min':13,'C#:min':14,'D:min':15,'D#:min':16,'E:min':17,'F:min':18,'F#:min':19,'G:min':20,'G#:min':21,
+    'A:min':22,'A#:min':23,'B:min':24
+}
+enharmonic_notes = {'Db':'C#','Eb':'D#','Gb':'F#','Ab':'G#','Bb':'A#'} 
+
 def getBeatlesPaths(basepath_labels,basepath_audio):
     '''This function returns a list of tuples containing songname and paths to .mp3 and .chords files
         basepath_labels: path to chord annotations
@@ -38,12 +44,16 @@ def getBeatlesPaths(basepath_labels,basepath_audio):
                 print(f"songname not found: {songname}")
     return songs
 
+def getBeatlesAnnotations(label_path):
+    labels_df = pd.read_csv(label_path,sep='\t',names=["tstart","tend","label"])
+    return labels_df
+
 def getBeatlesChroma(songs,chroma_type='librosa'):
     """creates a dataframe for a given list of beatles songs
        a songlist contaings: songname,audiopath,labelpath
     """
     # create dataframe
-    chroma_labels = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","H"]
+    chroma_labels = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
     labels = ["label"]
     labels.extend(chroma_labels)
     chroma_df = pd.DataFrame(columns=labels)
@@ -105,20 +115,41 @@ def getChordSequencesPaths(basepath):
         filepath_df.loc[len(filepath_df),:] = col
     return filepath_df
 
-def simplyfyAnnotations(df,type="majmin"):
+def simplyfyAnnotations(df,chords="majmin"):
     df_copy = df.copy()
-    if type=="majmin":
+    if chords=="majmin":
+        pattern = re.compile(r"([A-Za-z]b?#?:min)|([A-Za-z]b?#?:maj)|([A-Za-z]b?#?)")
         # remove all attached information from the label (slash chord etc.)
         for row,col in tqdm(df.iterrows(),desc="Processing.."):
-            pattern = re.compile(r"([A-Za-z]#?:min)|([A-Za-z]#?:maj)")
             match = pattern.search(col["label"])
             if match:
-                df_copy.at[row,"label"]= match.group()
-    elif type=="sevenths":
+                # remove :maj remaining from seventh chords (C:maj7 -> C) 
+                label = match.group().removesuffix(':maj')
+                if label.endswith(':min'):
+                    note = label.removesuffix(':min')
+                    if note in enharmonic_notes:
+                        label = enharmonic_notes[note]+':min'
+                elif label in enharmonic_notes:
+                    label = enharmonic_notes[label]
+                df_copy.at[row,"label"]= label
+    elif chords=="sevenths":
+        pattern = re.compile(r"([A-Za-z]#?(:min)?7?)|([A-Za-z]#?(:maj)?7?)|([A-Za-z]#?(:7)?)")
         # remove all attached information from the label (slash chord etc.)
         for row,col in tqdm(df.iterrows(),desc="Processing.."):
-            pattern = re.compile(r"([A-Za-z]#?(:min)?7?)|([A-Za-z]#?(:maj)?7?)|([A-Za-z]#?(:7)?)")
             match = pattern.search(col["label"])
             if match:
                 df_copy.at[row,"label"]= match.group()
     return df_copy
+
+
+if __name__ == '__main__':
+    basepath_labels="/home/max/ET-TI/Masterarbeit/prototyping/data/beatles/annotations/chords/"
+    basepath_audio = "/home/max/ET-TI/Masterarbeit/prototyping/data/beatles/audio/"
+
+    songs = getBeatlesPaths(basepath_labels,basepath_audio)
+    chroma_df = getBeatlesChroma(songs,'madmom')
+    chroma_df.to_pickle("/home/max/ET-TI/Masterarbeit/prototyping/data/beatles/beatles_chroma.pkl")  
+
+    chroma_majmin_df = simplyfyAnnotations(chroma_df,'majmin')
+    chroma_majmin_df.to_pickle("/home/max/ET-TI/Masterarbeit/prototyping/data/beatles/beatles_chroma_majmin.pkl")  
+
