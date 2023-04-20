@@ -10,13 +10,13 @@ HOP_LENGTH = 4410
 
 def plotChroma(ax,chroma,sr=SAMPLING_RATE,hop_length=HOP_LENGTH):
     
-    librosa.display.specshow(chroma[:100,:].T,y_axis='chroma',cmap='viridis',
+    librosa.display.specshow(chroma.T,y_axis='chroma',cmap='viridis',
                                 ax=ax,x_axis='time',sr=sr,hop_length=hop_length)
     ax.set_xlabel('Time in s')
 
 def getChroma(filepath,chroma_type='librosa'):
     if chroma_type == 'librosa':
-        y, sr = librosa.load(filepath,sr=44100)
+        y, _ = librosa.load(filepath,sr=SAMPLING_RATE)
         # harmonic percussive sound separation
         y_harm = librosa.effects.harmonic(y=y, margin=8)
         # calculate chroma

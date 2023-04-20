@@ -5,15 +5,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import dataloader 
 
-
 # train a HMM and save it to pickle file
-
 chord_labels_majmin = {'N':0,'C':1,'C#':2,'D':3,'D#':4,'E':5,'F':6,'F#':7,'G':8,'G#':9,'A':10,'A#':11,'B':12,
     'C:min':13,'C#:min':14,'D:min':15,'D#:min':16,'E:min':17,'F:min':18,'F#:min':19,'G:min':20,'G#:min':21,
     'A:min':22,'A#:min':23,'B:min':24
 }
 chord_index_majmin = {value: key for key, value in chord_labels_majmin.items()}
-
 
 def find_changes(lst):
     """returns list of indices where the list elements differ"""
