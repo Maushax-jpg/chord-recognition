@@ -5,10 +5,10 @@ import numpy as np
 from tqdm import tqdm
 import chromagram
 from torch.utils.data import Dataset
-import mir_eval.chord as chords
+import mir_eval
 
 class BeatlesDataset(Dataset):
-    def __init__(self,basepath,chroma_type='madmom'):
+    def __init__(self,basepath="/home/max/ET-TI/Masterarbeit/prototyping/data/beatles/",chroma_type='madmom'):
         self.filepaths_df = self.getPaths(basepath)
         self.chroma_df = pd.DataFrame()
         self.annotations_df = pd.DataFrame()
@@ -17,8 +17,9 @@ class BeatlesDataset(Dataset):
     def __getitem__(self, index):
         # return chroma and labels
         chroma = chromagram.getChroma(self.filepaths_df.loc[index,'audiopath'],self.chroma_type)
-        annotations_df = pd.read_csv(self.filepaths_df.loc[index,'annotationpath'],sep='\t',names=["tstart","tend","label"])
-        return chroma,annotations_df
+        annotations = mir_eval.io.load_labeled_intervals(self.filepaths_df.loc[index,'annotationpath'],'\t','#')
+        title = self.filepaths_df.loc[index,'title']
+        return title,chroma,annotations
 
     def __len__(self):
         return len(self.filepaths_df)
