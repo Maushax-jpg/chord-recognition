@@ -50,7 +50,7 @@ def formatChordLabel(chordlabel):
         # Major chord
         return note
 
-def plotAudioWaveform(ax,audiopath,interval):
+def plotAudioWaveform(ax,audiopath,interval=(0,10)):
     start_time,end_time = interval
     y,sr = librosa.load(audiopath,sr=44100)
     t = np.linspace(0,(len(y)-1)/sr,len(y))
@@ -62,16 +62,15 @@ def plotAudioWaveform(ax,audiopath,interval):
     ax.set_ylabel('Normalized amplitude')
     ax.grid('on')
 
-def plotPredictionResult(ax,predictions_idx,predictions,interval):
+def plotPredictionResult(ax,t_start,predictions,interval=(0,10)):
     start_time,end_time = interval
     ax.text(start_time-1.3,1.1,'Estimation:',horizontalalignment='center',color='r')
-    for i,index in enumerate(predictions_idx):
-        t = float(index)*0.1  # conversion index to time 
+    for t,label in zip(t_start,predictions):
         if (t >= start_time) & (t <= end_time):
             ax.vlines(t,-1,1,'r',linestyles='dashed',linewidth=1)
-            ax.text(t,1.1,formatChordLabel(predictions[i]),horizontalalignment='center',color='r')
+            ax.text(t,1.1,formatChordLabel(label),horizontalalignment='center',color='r')
 
-def plotAnnotations(ax,annotationspath,interval,chords='majmin',dataset='beatles'):
+def plotAnnotations(ax,annotationspath,interval=(0,10),chords='majmin',dataset='beatles'):
     start_time,end_time = interval
     if not dataset=='beatles':
         raise NotImplementedError

@@ -8,10 +8,11 @@ dcp = madmom.audio.chroma.DeepChromaProcessor()
 SAMPLING_RATE = 44100
 HOP_LENGTH = 4410
 
-def plotChroma(ax,chroma,sr=SAMPLING_RATE,hop_length=HOP_LENGTH):
+def plotChroma(ax,chroma,interval=(0,10),sr=SAMPLING_RATE,hop_length=HOP_LENGTH):
     
     librosa.display.specshow(chroma.T,y_axis='chroma',cmap='viridis',
                                 ax=ax,x_axis='time',sr=sr,hop_length=hop_length)
+    ax.set_xlim(interval)
     ax.set_xlabel('Time in s')
 
 def getChroma(filepath,chroma_type='librosa'):

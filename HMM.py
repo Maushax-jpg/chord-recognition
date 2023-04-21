@@ -86,14 +86,18 @@ class HiddenMarkovModel():
     
     def predict(self,t,features):
         predictions = self.model.predict(features)
+
         # initialize chord changes with first prediction
-        t_start =round(t[0],2)
         chord_changes = [self.state_index[predictions[0]]]
-        intervals=[]
+        t_start = [t[0]]
+        t_stop = []
         for i in range(1, len(predictions)):
             if predictions[i] != predictions[i-1]:
+                t_stop.append(round(t[i],2))
+                # add chord change
                 chord_changes.append(self.state_index[predictions[i]])
-                intervals.append((t_start,round(t[i],2)))
-                t_start = round(t[i],2)
-        return intervals,chord_changes
+                t_start.append(round(t[i],2))
+        # append last t_stop to conclude predictions
+        t_stop.append(round(t[-1],2))
+        return t_start,t_stop,chord_changes
         

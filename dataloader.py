@@ -5,6 +5,7 @@ import numpy as np
 from tqdm import tqdm
 import chromagram
 from torch.utils.data import Dataset
+import librosa
 import mir_eval
 
 class BeatlesDataset(Dataset):
@@ -16,14 +17,19 @@ class BeatlesDataset(Dataset):
 
     def __getitem__(self, index):
         # return chroma and labels
+        path = self.filepaths_df.loc[index,'audiopath']
         chroma = chromagram.getChroma(self.filepaths_df.loc[index,'audiopath'],self.chroma_type)
         annotations = mir_eval.io.load_labeled_intervals(self.filepaths_df.loc[index,'annotationpath'],'\t','#')
-        title = self.filepaths_df.loc[index,'title']
-        return title,chroma,annotations
+        return chroma,annotations
 
     def __len__(self):
         return len(self.filepaths_df)
 
+    def getFilepaths(self,index):
+        audio = self.filepaths_df.loc[index,'audiopath']
+        annotations = self.filepaths_df.loc[index,'annotationpath']
+        return audio,annotations
+    
     def getPaths(self,basepath):
         '''This function returns a list of tuples containing songname and paths to .mp3 and .chords files
             basepath_labels: path to chord annotations
