@@ -1,6 +1,7 @@
 import hmmlearn.hmm
 import numpy as np
-import mir_eval
+import joblib
+import os
 
 class HiddenMarkovModel():
     """
@@ -12,7 +13,7 @@ class HiddenMarkovModel():
 
         Examples: 
         >>> train_data = pandas.DataFrame(columns=['C','C#',..,'B','label'])
-        >>> states = ['C','Cm','C7']
+        >>> states = ['C','C:min',..,'B','B:min']
         >>> HMM = HiddenMarkovModel(train_data,states)
     """
     def __init__(self,train_data,state_labels,pi_matrix=None):
@@ -39,7 +40,7 @@ class HiddenMarkovModel():
             try:
                 transitions[self.state_labels[x],self.state_labels[y]] += 1.0
             except KeyError:
-                print(f"KeyError: {x} -> label ist not a valid state! skipping transition..")
+                print(f"KeyError: Transition:{x,y} -> label ist not a valid state! skipping transition..")
                 continue
         # normalize transitions to get probability
         for row in range(len(self.state_labels)):
@@ -101,3 +102,13 @@ class HiddenMarkovModel():
         t_stop.append(round(t[-1],2))
         return t_start,t_stop,chord_changes
         
+def save_model(path,HiddenMarkovModel):
+    # Save HMM model to a file
+    joblib.dump(HiddenMarkovModel, os.path.join(path,'hmm_model.pkl'))
+
+def load_model(path):
+    """load model from .pkl file
+        NOT IMPLEMENTED: ERROR checking etc.
+    """
+    model = joblib.load(path)
+    return model
