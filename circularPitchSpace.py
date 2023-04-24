@@ -7,7 +7,7 @@ chromatic_index = {-6:'gis',-5:'a',-4:'b',-3:'h',-2:'c',-1:'cis',0:'d',1:'es',2:
 
 # number of accidentals: flats (+) or sharps (-) in a key  (e.g. F-maj=-1,C-maj=0, G-Maj=1)
 # denoted as n_k
-num_accidentals = {-5:'Des',-4:'As',-3:'Es',-2:'B',-1:'F',0:'C',1:'G',2:'D',3:'A',4:'E',5:'H',6:'Fis/Ges'}
+num_accidentals = {-5:'Des',-4:'As',-3:'Es',-2:'B',-1:'F',0:'C',1:'G',2:'D',3:'A',4:'E',5:'H',6:'Fis'}
 
 def scaleVector(x,y,alpha):
     m,phi = cartesian2polar(x,y)
@@ -39,15 +39,18 @@ def sym3(n,g,n0):
         return x+n0
     else:
         return None
-    
+
+def getCircleLabel(index):
+    """explain away"""
+    n_k = list(num_accidentals.keys())[index]
+    return num_accidentals[n_k]
+
 def getChromaticIndices():
     """this function maps the chroma indices to the chromatic indices of the pitch space 
        for transformation of the chroma vector.
        The Chroma vector starts with the note 'C'!
-       [0,1, .. ,11] -> [-2,-1 ..,-3]
-    """
-    n_c = np.roll(list(chromatic_index.keys()),-4)
-    return n_c
+       [0,1, .. ,11] -> [-2,-1 ..,-3]"""
+    return np.roll(list(chromatic_index.keys()),-4)
 
 def annotateLabel(axis,z,note_label,ht_steps):
     x,y= scaleVector(z.real,z.imag,1.2)
@@ -62,6 +65,11 @@ def plotHalftoneGrid(axis,n_ht):
     for i in x:
         ht = np.exp(-1j*2*np.pi*(i/n_ht))*1j
         axis.plot(ht.real,ht.imag,'o',color='grey',markersize=2)
+
+def plotVector(axis,vec,**kwargs):
+    x,y = polar2cartesian(vec[0],vec[1])
+    axis.quiver(0,0,x,y,**kwargs)
+
 
 def plotCircleOfFifths(axis,chroma=None):
     plotHalftoneGrid(axis,84)
@@ -177,6 +185,7 @@ def plotChromaVector(axis,chroma,n_k,circle='F'):
                 rho_DR += temp
         axis.quiver(0,0,rho_DR.real,rho_DR.imag, units='xy',scale=1,color='r')
     axis.axis('off')
+
 
 def transformChroma(chroma):
     """explain away
