@@ -14,11 +14,17 @@ def scaleVector(x,y,alpha):
     m_new = m * alpha
     return polar2cartesian(m_new,phi)
 
-def cartesian2polar(x,y):
-    return np.sqrt(x**2+y**2),np.arctan2(y,x)
+def cartesian2polar(x,y,angle='deg'):
+    if angle == 'deg':
+        return np.sqrt(x**2+y**2),np.arctan2(y,x)*180/np.pi
+    else:
+        return np.sqrt(x**2+y**2),np.arctan2(y,x)
 
-def polar2cartesian(m,phi):
-    return m*np.cos(phi),m*np.sin(phi)
+def polar2cartesian(m,phi,angle='deg'):
+    if angle == 'deg':
+        return m*np.cos(phi),m*np.sin(phi*np.pi/180)
+    else:
+        return m*np.cos(phi),m*np.sin(phi)
 
 def sym(n,g):
     '''SYM-operator symmetriemodell'''
@@ -173,7 +179,10 @@ def plotChromaVector(axis,chroma,n_k,circle='F'):
     axis.axis('off')
 
 def transformChroma(chroma):
-    rho_F  = np.zeros_like((1,chroma.shape[0]),dtype=complex)
+    """explain away
+    returns some ndarrays..
+    """
+    rho_F  = np.zeros((chroma.shape[0],),dtype=complex)
     rho_FR = np.zeros_like(chroma,dtype=complex)
     rho_TR = np.zeros_like(chroma,dtype=complex)
     rho_DR = np.zeros_like(chroma,dtype=complex)
@@ -199,6 +208,11 @@ def transformChroma(chroma):
                     # diatonic circle   
                     n_dr = sym(n_f-7*n_k,12)
                     rho_DR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_dr/12))
+    # cartesian 2 polar conversion
+    rho_F = list(map(lambda x: cartesian2polar(x.real,x.imag), rho_F))
+    rho_FR = list(map(lambda fr: [cartesian2polar(x.real,x.imag) for x in fr], rho_FR))
+    rho_TR = list(map(lambda tr: [cartesian2polar(x.real,x.imag) for x in tr], rho_TR))
+    rho_DR = list(map(lambda dr: [cartesian2polar(x.real,x.imag) for x in dr], rho_DR))
     return (rho_F,rho_FR,rho_TR,rho_DR)
 
 if __name__=='__main__':

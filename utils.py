@@ -1,14 +1,11 @@
-import matplotlib.pyplot as plt
+import librosa
 import librosa.display
 import numpy as np
 from matplotlib import rc
 
-# custom
-import dataloader
-
 # Enable LaTeX support in matplotlib
-rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-rc('text', usetex=True)
+# rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+# rc('text', usetex=True)
 
 def formatChordLabel(chordlabel):
     # latex formatting of chordlabels
@@ -50,36 +47,39 @@ def formatChordLabel(chordlabel):
         # Major chord
         return note
 
-def plotAudioWaveform(ax,audiopath,interval=(0,10)):
-    start_time,end_time = interval
+def plotChroma(ax,chroma,time=(0,10),sr=44100,hop_length=4410):
+    librosa.display.specshow(chroma.T,y_axis='chroma',cmap='viridis',
+                                ax=ax,x_axis='time',sr=sr,hop_length=hop_length)
+    ax.set_xlim(time)
+    ax.set_xlabel('Time in s')
+
+def plotCqt(ax,audiopath,time=(0,10)):
+    y,_ = librosa.load(audiopath,sr=44100)
+    cqt = librosa.cqt(y,hop_length=4410,sr=44100)
+    librosa.display.specshow(librosa.amplitude_to_db(np.abs(cqt), ref=np.max),y_axis='cqt_note',cmap='viridis',
+                                ax=ax,x_axis='time',sr=44100,hop_length=4410)
+    ax.set_xlim((time))
+def plotAudioWaveform(ax,audiopath,time=(0,10)):
     y,sr = librosa.load(audiopath,sr=44100)
     t = np.linspace(0,(len(y)-1)/sr,len(y))
-    mask = (t >= start_time) & (t <= end_time)
+    mask = (t >= time[0]) & (t <= time[1])
     ax.plot(t[mask],y[mask]/np.max(y[mask]))
     ax.set_ylim([-1,1])
-    ax.set_xlim(start_time,end_time)
+    ax.set_xlim(time[0],time[1])
     ax.set_xlabel('Time in s')
     ax.set_ylabel('Normalized amplitude')
     ax.grid('on')
 
-def plotPredictionResult(ax,t_start,predictions,interval=(0,10)):
-    start_time,end_time = interval
-    ax.text(start_time-1.3,1.1,'Estimation:',horizontalalignment='center',color='r')
-    for t,label in zip(t_start,predictions):
-        if (t >= start_time) & (t <= end_time):
-            ax.vlines(t,-1,1,'r',linestyles='dashed',linewidth=1)
-            ax.text(t,1.1,formatChordLabel(label),horizontalalignment='center',color='r')
+def plotPredictionResult(ax,est_intervals,est_labels,time=(0,10)):
+    ax.text(time[0]-1.3,1.1,'Estimation:',fontsize=8,horizontalalignment='center',color='r')
+    for i,label in enumerate(est_labels):
+        if est_intervals[i,0]>= time[0]:
+            ax.vlines(est_intervals[i,0],-1,1,'r',linestyles='dashed',linewidth=1)
+            ax.text(est_intervals[i,0],1.1,label,fontsize=8,horizontalalignment='center',color='r')
 
-def plotAnnotations(ax,annotationspath,interval=(0,10),chords='majmin',dataset='beatles'):
-    start_time,end_time = interval
-    if not dataset=='beatles':
-        raise NotImplementedError
-    # load annotations
-    labels_df= dataloader.getBeatlesAnnotations(annotationspath)
-    # if chords == 'majmin':
-    #     labels_df = dataloader.simplifyAnnotations(labels_df,'majmin')
-    df = labels_df[(labels_df['tstart'] >= start_time) & (labels_df['tstart'] <= end_time)]
-    ax.text(start_time-1.3,1.2,'Label:',horizontalalignment='center',color='k')
-    for t,label in zip(df['tstart'],df['label']):
-        ax.vlines(t,-1,1,'grey',linestyles='dashed',linewidth=1)
-        ax.text(t,1.2,formatChordLabel(label),horizontalalignment='center')
+def plotAnnotations(ax,ref_intervals,ref_labels,time=(0,10)):
+    ax.text(time[0]-1.3,1.2,'Label:',fontsize=8,horizontalalignment='center',color='k')
+    for i,label in enumerate(ref_labels):
+        if ref_intervals[i,0] >= time[0]:
+            ax.vlines(ref_intervals[i,0],-1,1,'grey',linestyles='dashed',linewidth=1)
+            ax.text(ref_intervals[i,0],1.2,label,fontsize=8,horizontalalignment='center')

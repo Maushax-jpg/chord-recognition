@@ -1,7 +1,10 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+import dataloader
 import numpy as np
 import mir_eval
 import HMM
+import utils
 def getMajMinSubset(df):
     """
     returns a subset containing major and minor chords from the Dataframe df.
@@ -41,18 +44,16 @@ if __name__=='__main__':
     df = pd.read_pickle(path)
     if subset == 'majmin':
         df = getMajMinSubset(df)
-        # drop metadata in df 
 
     # split in training / test data
     songs = df['title'].unique()
-    print(songs)
-
+    states = df['label'].unique() 
+    df = df.drop(columns=['time','title'])
+    
     # maybe some cross validation?
     # use other datasets -> RWC? 
     ###############################
-
-    df.drop(columns=['title','time'])    
-    states = df['label'].unique() 
+  
     model = HMM.HiddenMarkovModel(df,states)
+    model.save("/home/max/ET-TI/Masterarbeit/models","hmm_model_librosa.pkl")
     
-    ###############################

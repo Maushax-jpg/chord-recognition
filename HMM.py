@@ -100,11 +100,22 @@ class HiddenMarkovModel():
                 t_start.append(round(t[i],2))
         # append last t_stop to conclude predictions
         t_stop.append(round(t[-1],2))
-        return t_start,t_stop,chord_changes
+        remove = []
+        for i in range(len(chord_changes)):
+            if (t_stop[i]-t_start[i]) < 0.3:
+                remove.append(i)
+                if i > 1:
+                    t_stop[i-1] = t_stop[i]
+        chord_changes = [chord_changes[i] for i in range(len(chord_changes)) if i not in remove]
+        t_start = [t_start[i] for i in range(len(t_start)) if i not in remove]
+        t_stop = [t_stop[i] for i in range(len(t_stop)) if i not in remove]
+        # shape = (n_events, 2)
+        intervals = np.array([t_start,t_stop],dtype=float).T
+        return intervals,chord_changes
         
-def save_model(path,HiddenMarkovModel):
-    # Save HMM model to a file
-    joblib.dump(HiddenMarkovModel, os.path.join(path,'hmm_model.pkl'))
+    def save(self,path,filename):
+        # Save HMM model to a file
+        joblib.dump(self, os.path.join(path,filename))
 
 def load_model(path):
     """load model from .pkl file
