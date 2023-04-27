@@ -4,8 +4,8 @@ import numpy as np
 from matplotlib import rc
 
 # Enable LaTeX support in matplotlib
-# rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-# rc('text', usetex=True)
+rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
+rc('text', usetex=True)
 
 def formatChordLabel(chordlabel):
     # latex formatting of chordlabels
@@ -73,13 +73,14 @@ def plotAudioWaveform(ax,audiopath,time=(0,10)):
 def plotPredictionResult(ax,est_intervals,est_labels,time=(0,10)):
     ax.text(time[0]-1.3,1.1,'Estimation:',fontsize=8,horizontalalignment='center',color='r')
     for i,label in enumerate(est_labels):
-        if est_intervals[i,0]>= time[0]:
+        if est_intervals[i,0] >= time[0] and est_intervals[i,0] < time[1]:
             ax.vlines(est_intervals[i,0],-1,1,'r',linestyles='dashed',linewidth=1)
             ax.text(est_intervals[i,0],1.1,label,fontsize=8,horizontalalignment='center',color='r')
 
 def plotAnnotations(ax,ref_intervals,ref_labels,time=(0,10)):
     ax.text(time[0]-1.3,1.2,'Label:',fontsize=8,horizontalalignment='center',color='k')
     for i,label in enumerate(ref_labels):
-        if ref_intervals[i,0] >= time[0]:
+        if ref_intervals[i,0] >= time[0] and ref_intervals[i,0] < time[1]:
             ax.vlines(ref_intervals[i,0],-1,1,'grey',linestyles='dashed',linewidth=1)
-            ax.text(ref_intervals[i,0],1.2,label,fontsize=8,horizontalalignment='center')
+            ax.text(ref_intervals[i,0],1.2,formatChordLabel(label),fontsize=8,horizontalalignment='center')
+    ax.grid('off')
