@@ -1,5 +1,23 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from collections import namedtuple
+
+PitchClass = namedtuple('PitchClass','name chroma_index chromatic_index num_accidentals')
+
+pitch_classes = [
+            PitchClass("C",0,-2,0),
+            PitchClass("C#",1,-1,-5), # use enharmonic note with lowest accidentals (Db)! (C# has 7 crosses) 
+            PitchClass('D',2,0,2),
+            PitchClass("D#",3,1,-3),  #Eb
+            PitchClass("E",4,2,4),
+            PitchClass("F",5,3,-1),
+            PitchClass("F#",6,4,6),
+            PitchClass("G",7,5,1),
+            PitchClass("G#",8,-6,-4), # Ab
+            PitchClass("A",9,-5,3),
+            PitchClass("A#",10,-4,-2), #Bb
+            PitchClass("B",11,-3,5)
+]
 
 # chromatic index of a pitch
 # denoted as n_i
@@ -8,6 +26,29 @@ chromatic_index = {-6:'gis',-5:'a',-4:'b',-3:'h',-2:'c',-1:'cis',0:'d',1:'es',2:
 # number of accidentals: flats (+) or sharps (-) in a key  (e.g. F-maj=-1,C-maj=0, G-Maj=1)
 # denoted as n_k
 num_accidentals = {-5:'Des',-4:'As',-3:'Es',-2:'B',-1:'F',0:'C',1:'G',2:'D',3:'A',4:'E',5:'H',6:'Fis'}
+
+def getPitchClassEnergyProfile(chroma,threshold=0.6,weighting=0.7):
+    """divide each chroma bin energy by the total chroma energy and apply thresholding of 90% by default
+       angle weighting puts more emphasis on tonic of a pitch class. e.g a C-Major chord is present pitch classes C,F and G
+    """
+    angle_weighting = lambda x : -((1-weighting)/np.pi) * np.abs(x) + 1
+    pitch_class_energy = np.zeros_like(chroma)
+    chroma_energy = np.square(chroma)
+    total_energy = np.reshape(np.repeat(np.sum(chroma_energy,axis=1),12),chroma.shape)
+    for pitch_class in pitch_classes:
+        for chroma_bin in range(12):
+                # iterate all chromatic indices for every pitch class and check if pitch class is present in this key
+                n_c = pitch_classes[chroma_bin].chromatic_index
+                n_f = sym3(49*n_c,84,7*pitch_class.num_accidentals)
+                if checkIndex(n_f,pitch_class.num_accidentals):
+                    n_tr = sym(n_f-7*pitch_class.num_accidentals-12,24)
+                    angle = np.angle(np.exp(-1j*2*np.pi*(n_tr/24)))
+                    pitch_class_energy[:,pitch_class.chroma_index] += angle_weighting(angle) * chroma_energy[:,chroma_bin]
+
+    # apply tresholding for pitchclasses with low relative energy
+    pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0            
+    pitch_class_energy = np.multiply(pitch_class_energy,1/total_energy)
+    return pitch_class_energy
 
 def scaleVector(x,y,alpha):
     m,phi = cartesian2polar(x,y)
@@ -53,7 +94,7 @@ def getChromaticIndices():
     return np.roll(list(chromatic_index.keys()),-4)
 
 def annotateLabel(axis,z,note_label,ht_steps=None,fontsize=7):
-    x,y= scaleVector(z.real,z.imag,1.2)
+    x,y= scaleVector(z.real,z.imag,1.25)
     axis.text(x,y,note_label,rotation=np.arctan2(y,x)*180/np.pi-90,fontsize=fontsize,horizontalalignment='center',verticalalignment='center')
     if ht_steps:
         x,y = scaleVector(z.real,z.imag,0.8)
@@ -75,7 +116,7 @@ def plotVector(axis,vec,rotation=np.pi/2,**kwargs):
     axis.set_ylim((-1,1))
     axis.set_axis_off()
 
-def plotCircleOfFifths(axis,chroma=None):
+def plotCircleOfFifths(axis):
     plotHalftoneGrid(axis,84)
     for n_c in chromatic_index:
         n_f = sym3(49*n_c,84,0)
@@ -188,7 +229,7 @@ def plotChromaVector(axis,chroma,n_k,circle='F'):
 def transformChroma(chroma):
     """explain away
     returns some ndarrays..
-    """
+    """    
     rho_F  = np.zeros((chroma.shape[0],),dtype=complex)
     rho_FR = np.zeros_like(chroma,dtype=complex)
     rho_TR = np.zeros_like(chroma,dtype=complex)
@@ -220,17 +261,17 @@ def transformChroma(chroma):
     rho_FR = list(map(lambda fr: [cartesian2polar(x.real,x.imag) for x in fr], rho_FR))
     rho_TR = list(map(lambda tr: [cartesian2polar(x.real,x.imag) for x in tr], rho_TR))
     rho_DR = list(map(lambda dr: [cartesian2polar(x.real,x.imag) for x in dr], rho_DR))
+
     return (rho_F,rho_FR,rho_TR,rho_DR)
 
 def plotPitchSpace(size="A4"):
     if size == 'A4':
         fig_cps = plt.figure(figsize=((8.27,11.69)))
     else:
-        # other formats?
-        return    
+        fig_cps = plt.figure(figsize=(size))
     # helper variable
     n_k = list(num_accidentals.keys())
-    grid = plt.GridSpec(7, 7, wspace=0.5, hspace=0.5)
+    grid = plt.GridSpec(7, 7, wspace=0.55, hspace=0.55)
     axes_list = [[] for _ in range(7)]
     for i in range(7):
         ax = fig_cps.add_subplot(grid[0,i])
@@ -283,18 +324,11 @@ def plotFeatures(ax_list,rho_F,rho_FR,rho_TR,rho_DR,color='r'):
             plotVector(ax_list[6][i-6],rho_DR[i],**kwargs)
 
 if __name__=='__main__':
-    fig,ax = plt.subplots(figsize=(5, 5))
-    chroma = np.array([[1,0,0,0,1,0,0,1,0,0,0,0],[1,0,0,0,1,0,0,0,0,1,0,0]])
-    plotCircleOfFifths(ax,False)
-    #plotChromaVectorCircleF(ax[0,1],chroma[10,:])
-    # for i,n_k in enumerate(num_accidentals):    
-    #     plotKeyRelatedRealPitches(ax[i+1,0],n_k,'fifths',False)
-    #     plotKeyRelatedRealPitches(ax[i+1,1],n_k,'thirds',False)
-    #     plotKeyRelatedRealPitches(ax[i+1,2],n_k,'diatonic',False)
-    #     plotChromaVector(ax[i+1],chroma[0,:],n_k)
-    # for row in range(13):
-    #     for col in range(3):
-    #         ax[row,col].axis('off')
+    chroma = np.array([[1,0,0,0,1,0,0,1,0,0,0,0],[1,0,0,0,1,0,0,0,0,1,0,0]],dtype=float)
+    x= getPitchClassEnergyProfile(chroma)
+    print(x)
 
-    plt.show()
+
+
+
     
