@@ -2,21 +2,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 from collections import namedtuple
 
-PitchClass = namedtuple('PitchClass','name chroma_index chromatic_index num_accidentals')
+PitchClass = namedtuple('PitchClass','name chroma_index chromatic_index num_accidentals pitchspace_index')
+""" 
+    Pitch class
+    Chroma_index : index of pitch class in chroma vector
+    chromatic_index : index n_c for pitch class in pitch space 
+    num_accidentals : The number of accidentals present in the key of this pitch class 
+    pitchspace_index : index of pitch class in array of vectors in r_FR,r_TR and r_DR 
+"""
 
 pitch_classes = [
-            PitchClass("C",0,-2,0),
-            PitchClass("C#",1,-1,-5), # use enharmonic note with lowest accidentals (Db)! (C# has 7 crosses) 
-            PitchClass('D',2,0,2),
-            PitchClass("D#",3,1,-3),  #Eb
-            PitchClass("E",4,2,4),
-            PitchClass("F",5,3,-1),
-            PitchClass("F#",6,4,6),
-            PitchClass("G",7,5,1),
-            PitchClass("G#",8,-6,-4), # Ab
-            PitchClass("A",9,-5,3),
-            PitchClass("A#",10,-4,-2), #Bb
-            PitchClass("B",11,-3,5)
+            PitchClass("C",0,-2,0,4),
+            PitchClass("C#",1,-1,-5,5), # use enharmonic note with lowest accidentals (Db)! (C# has 7 crosses) 
+            PitchClass('D',2,0,2,6),
+            PitchClass("D#",3,1,-3,7),  #Eb
+            PitchClass("E",4,2,4,8),
+            PitchClass("F",5,3,-1,9),
+            PitchClass("F#",6,4,6,10),
+            PitchClass("G",7,5,1,11),
+            PitchClass("G#",8,-6,-4,0), # Ab
+            PitchClass("A",9,-5,3,1),
+            PitchClass("A#",10,-4,-2,2), #Bb
+            PitchClass("B",11,-3,5,3)
 ]
 
 # chromatic index of a pitch
@@ -33,6 +40,7 @@ def getPitchClassEnergyProfile(chroma,threshold=0.6,weighting=0.7):
     """
     angle_weighting = lambda x : -((1-weighting)/np.pi) * np.abs(x) + 1
     pitch_class_energy = np.zeros_like(chroma)
+
     chroma_energy = np.square(chroma)
     total_energy = np.reshape(np.repeat(np.sum(chroma_energy,axis=1),12),chroma.shape)
     for pitch_class in pitch_classes:
@@ -49,6 +57,8 @@ def getPitchClassEnergyProfile(chroma,threshold=0.6,weighting=0.7):
     pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0            
     pitch_class_energy = np.multiply(pitch_class_energy,1/total_energy)
     return pitch_class_energy
+
+
 
 def scaleVector(x,y,alpha):
     m,phi = cartesian2polar(x,y)
@@ -256,11 +266,13 @@ def transformChroma(chroma):
                     # diatonic circle   
                     n_dr = sym(n_f-7*n_k,12)
                     rho_DR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_dr/12))
+
+    #   this is useless!                
     # cartesian 2 polar conversion
-    rho_F = list(map(lambda x: cartesian2polar(x.real,x.imag), rho_F))
-    rho_FR = list(map(lambda fr: [cartesian2polar(x.real,x.imag) for x in fr], rho_FR))
-    rho_TR = list(map(lambda tr: [cartesian2polar(x.real,x.imag) for x in tr], rho_TR))
-    rho_DR = list(map(lambda dr: [cartesian2polar(x.real,x.imag) for x in dr], rho_DR))
+    # rho_F = list(map(lambda x: cartesian2polar(x.real,x.imag), rho_F))
+    # rho_FR = list(map(lambda fr: [cartesian2polar(x.real,x.imag) for x in fr], rho_FR))
+    # rho_TR = list(map(lambda tr: [cartesian2polar(x.real,x.imag) for x in tr], rho_TR))
+    # rho_DR = list(map(lambda dr: [cartesian2polar(x.real,x.imag) for x in dr], rho_DR))
 
     return (rho_F,rho_FR,rho_TR,rho_DR)
 
