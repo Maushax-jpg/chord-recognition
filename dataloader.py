@@ -40,7 +40,8 @@ class MIRDataset(Dataset):
         print(f"LOADING AUDIO: \n{self._tracks[track_id].title} ID: {track_id}")
         t,chroma = self.calculateChroma(track_id)
         ref_intervals,ref_labels = self.getAnnotations(track_id)
-        return t,chroma,ref_intervals,ref_labels
+        audio,_ = self._tracks[track_id].audio
+        return audio,t,chroma,ref_intervals,ref_labels
 
     def getTrackIDs(self):
         """returns list of available track IDs that can be used to access the dataset tracks"""
@@ -71,7 +72,7 @@ class MIRDataset(Dataset):
             t = np.linspace(0,chroma.shape[0]*HOP_LENGTH/SAMPLING_RATE,chroma.shape[0])
         
         if self._align_chroma:
-            beat_activations = self._activations_processor(self.tracks[track_id].audio_path)
+            beat_activations = self._activations_processor(self._tracks[track_id].audio_path)
             beats = self._beat_processor(beat_activations)
             chroma = self.alignChroma(t,chroma,beats)
         return t,chroma
