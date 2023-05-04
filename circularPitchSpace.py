@@ -4,7 +4,6 @@ from collections import namedtuple
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 
-    Pitch class
     pitch_class_index : index of pitch class in chroma vector and list of pitch_classes
     chromatic_index : index n_c for pitch class in pitch space 
     num_accidentals : The number of accidentals n_k present in the key of this pitch class 
@@ -25,10 +24,47 @@ pitch_classes = [
             PitchClass("A#",10,-4,-2), #Bb
             PitchClass("B",11,-3,5)
 ]
+"""A sorted list of Pitch classes: [C, C#, .. , A#, B]"""
+
+def transformChroma(chroma):
+    """explain away
+    returns some ndarrays..
+    """    
+    rho_F  = np.zeros((chroma.shape[0],),dtype=complex)
+    rho_FR = np.zeros_like(chroma,dtype=complex)
+    rho_TR = np.zeros_like(chroma,dtype=complex)
+    rho_DR = np.zeros_like(chroma,dtype=complex)
+    # iterate over all time steps
+    for time_index in range(chroma.shape[0]):
+        # calculte key related circles
+        for x in pitch_classes:
+            n_k = x.num_accidentals
+            key_index = x.pitch_class_index
+            # iterate over all chroma bins with correct index
+            for pitch_class,chroma_bin in zip(pitch_classes,chroma[time_index,:]):
+                n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
+                if n_k == 0:
+                    # calculate vector entries for circle of fifth
+                    rho_F[time_index] += chroma_bin * np.exp(-1j*2*np.pi*(n_f/84))
+                # check if real pitch is part of the key n_k
+                if checkIndex(n_f,n_k):
+                    # fifth related circle
+                    n_fr = sym(n_f-7*n_k, 48)
+                    rho_FR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_fr/48))
+                    # third related circle  
+                    n_tr = sym(n_f-7*n_k-12,24)
+                    rho_TR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_tr/24))        
+                    # diatonic circle   
+                    n_dr = sym(n_f-7*n_k,12)
+                    rho_DR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_dr/12))
+    return (rho_F,rho_FR,rho_TR,rho_DR)
+
 
 def getPitchClassEnergyProfile(chroma,threshold=0.6,weighting=0.7):
-    """divide each chroma bin energy by the total chroma energy and apply thresholding of 90% by default
-       angle weighting puts more emphasis on tonic of a pitch class. e.g a C-Major chord is present pitch classes C,F and G
+    """
+    divide each chroma bin energy by the total chroma energy and apply thresholding of 90% by default
+       angle weighting puts more emphasis on tonic of a pitch class. 
+       This is necessary because a C-Major chord is present in pitch classes C,F and G
     """
     angle_weighting = lambda x : -((1-weighting)/np.pi) * np.abs(x) + 1
     pitch_class_energy = np.zeros_like(chroma)
@@ -104,10 +140,10 @@ def plotHalftoneGrid(axis,n_ht):
         ht = np.exp(-1j*2*np.pi*(i/n_ht))*1j
         axis.plot(ht.real,ht.imag,'o',color='grey',markersize=1.5)
 
-def plotVector(axis,vec,rotation=np.pi/2,**kwargs):
+def plotVector(axis,z,rotation=np.pi/2,**kwargs):
     # rotate for CPS plots
-    x,y = polar2cartesian(vec[0],vec[1]+rotation)
-    axis.arrow(0,0,x,y,**kwargs)
+    z = z*1j
+    axis.arrow(0,0,z.real,z.imag,**kwargs)
     axis.set_xlim((-1,1))
     axis.set_ylim((-1,1))
     axis.set_axis_off()
@@ -174,39 +210,6 @@ def checkIndex(n_f,n_k):
     else:
         return False
     
-def transformChroma(chroma):
-    """explain away
-    returns some ndarrays..
-    """    
-    rho_F  = np.zeros((chroma.shape[0],),dtype=complex)
-    rho_FR = np.zeros_like(chroma,dtype=complex)
-    rho_TR = np.zeros_like(chroma,dtype=complex)
-    rho_DR = np.zeros_like(chroma,dtype=complex)
-    # iterate over all time steps
-    for time_index in range(chroma.shape[0]):
-        # calculte key related circles
-        for x in pitch_classes:
-            n_k = x.num_accidentals
-            key_index = x.pitch_class_index
-            # iterate over all chroma bins with correct index
-            for pitch_class,chroma_bin in zip(pitch_classes,chroma[time_index,:]):
-                n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
-                if n_k == 0:
-                    # calculate vector entries for circle of fifth
-                    rho_F[time_index] += chroma_bin * np.exp(-1j*2*np.pi*(n_f/84))
-                # check if real pitch is part of the key n_k
-                if checkIndex(n_f,n_k):
-                    # fifth related circle
-                    n_fr = sym(n_f-7*n_k, 48)
-                    rho_FR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_fr/48))
-                    # third related circle  
-                    n_tr = sym(n_f-7*n_k-12,24)
-                    rho_TR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_tr/24))        
-                    # diatonic circle   
-                    n_dr = sym(n_f-7*n_k,12)
-                    rho_DR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_dr/12))
-    return (rho_F,rho_FR,rho_TR,rho_DR)
-
 def plotPitchSpace():
     fig_cps = plt.figure(figsize=((8.27,11.69)))
     grid = plt.GridSpec(7, 7, wspace=0.55, hspace=0.55)
@@ -259,10 +262,6 @@ def plotFeatures(ax_list,rho_F,rho_FR,rho_TR,rho_DR,color='r'):
             plotVector(ax_list[2][i-6],rho_FR[i],**kwargs)
             plotVector(ax_list[4][i-6],rho_TR[i],**kwargs)    
             plotVector(ax_list[6][i-6],rho_DR[i],**kwargs)
-
-if __name__=='__main__':
-    plotPitchSpace()
-    plt.show()
 
 
 
