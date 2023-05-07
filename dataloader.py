@@ -1,7 +1,4 @@
 import os
-import re
-import pandas as pd
-from tqdm import tqdm
 from torch.utils.data import Dataset
 import mir_eval
 import mirdata
@@ -10,8 +7,7 @@ import librosa
 import librosa.display
 import numpy as np
 import scipy
-import audioread.ffdec
-
+import json
 
 SAMPLING_RATE = 44100
 HOP_LENGTH = 4410
@@ -20,14 +16,15 @@ class MIRDataset(Dataset):
     """
     Dataloader class for MIR Datasets. Available Datasets are "guitarset","beatles" and "queen"
     """
-    def __init__(self,name,basepath="/home/max/ET-TI/Masterarbeit/mirdata/",use_deep_chroma=True,align_chroma=True):
+    def __init__(self,name,basepath="/home/max/ET-TI/Masterarbeit/mirdata/",use_deep_chroma=True,align_chroma=True,split_nr=0):
         super().__init__()
         self._path = basepath
+        self._split_nr = split_nr
         self._use_deep_chroma = use_deep_chroma
         self._align_chroma = align_chroma
         self._dataset = self.loadDataset(name)
         self._tracks = self._dataset.load_tracks()
-        self._chroma_processor = madmom.audio.chroma.DeepChromaProcessor()
+        self._chroma_processor = self.loadChromaProcessor(split_nr)
         self._activations_processor = madmom.features.beats.RNNBeatProcessor()
         self._beat_processor = madmom.features.beats.BeatTrackingProcessor(fps=100)
 
@@ -47,10 +44,20 @@ class MIRDataset(Dataset):
         """returns list of available track IDs that can be used to access the dataset tracks"""
         return self._dataset.track_ids
     
+    def getTrackList(self):
+        """returns list of available track names"""
+        with open(f"/home/max/ET-TI/Masterarbeit/mirdata/beatles/splits/split_{self._split_nr}.json", 'r', encoding='UTF-8') as file:
+            track_list = json.load(file)
+        return track_list
+
     def loadDataset(self,name):
         if name != "beatles":
             raise ValueError(f"Dataset {name} not available!")
         return mirdata.initialize(name, data_home=os.path.join(self._path,name))
+    
+    def loadChromaProcessor(self,split_nr):
+        path = f"/home/max/ET-TI/Masterarbeit/models/ismir2016/chroma_dnn_{split_nr}.pkl"
+        return madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=[path])
     
     def calculateChroma(self,track_id):
         """
