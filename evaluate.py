@@ -5,8 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
 
-
-
 def createChordLabelDict(alphabet="majmin"):
     pitch_class = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
     chord_labels = {}
@@ -17,6 +15,7 @@ def createChordLabelDict(alphabet="majmin"):
         for i,x in enumerate(pitch_class):
             chord_labels[f"{x}:min"] = i+12 
         chord_labels["N"] = len(chord_labels)
+    chord_labels["Others"] = len(chord_labels)
     return chord_labels
 
 def compute_eval_measures(ref_evalmatrix, est_evalmatrix):
@@ -73,8 +72,7 @@ def plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix):
     ax.set_yticks(list(chordlabels.values()))       
     ax.set_yticklabels(list(chordlabels.keys()))
     ax.set_ylabel("Chords")
-    ax.set_title(f"Precision: {P}, Recall: {R},F-measure: {F},TP: {TP}, FP:{FP}, FN:{FN}\n MIREX majmin: {score}, SegMean: {seg_score}")
-    
+    ax.set_title(f"Precision: {P}, Recall: {R},F-measure: {F},TP: {TP}, FP:{FP}, FN:{FN}")
     plt.show()
 
 
@@ -86,13 +84,15 @@ def simplifyLabels(labels,alphabet="majmin"):
         quality = chord[1]
         if chord[0] in enharmonic_notes:
             chord[0] = enharmonic_notes[chord[0]]
-        if quality.startswith("maj") or quality.startswith("7"):
+        if quality == "maj":
             simplified_labels.append(mir_eval.chord.join(chord[0],"maj"))
-        elif quality.startswith("min"):
+        elif quality == "min":
             simplified_labels.append(mir_eval.chord.join(chord[0],"min"))
-        else:
-            # ignore dim and aug for now..
+        elif chord[0] == "N":
             simplified_labels.append("N")
+        else:
+            # ignore dim and aug, sus for now..
+            simplified_labels.append("Others")
     return simplified_labels
 
 def createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels):
@@ -101,8 +101,10 @@ def createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels)
             est_intervals, est_labels, ref_intervals.min(),
             ref_intervals.max(), mir_eval.chord.NO_CHORD,
             mir_eval.chord.NO_CHORD)
+    
+    ref_labels = simplifyLabels(ref_labels,alphabet="majmin")
 
-    chordlabels = transcribe.createChordLabelDict("majmin")
+    chordlabels = createChordLabelDict("majmin")
     est_evalmatrix = np.zeros((len(chordlabels),t_chroma.shape[0]),dtype=int)
     ref_evalmatrix = np.zeros((len(chordlabels),t_chroma.shape[0]),dtype=int)
     for interval,label in zip(est_intervals,est_labels):
@@ -138,21 +140,3 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels):
     score = round(mir_eval.chord.weighted_accuracy(comparisons, durations),2)
     mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
     return score,mean_seg_score
-
-if __name__ == '__main__':
-    dataset = dataloader.MIRDataset("beatles",use_deep_chroma=True,align_chroma=True,split_nr=3)
-    tracks = dataset.getTrackList()
-    track_id = list(tracks.keys())
-    id = 21 # 21:let it be -> easy and clear harmony
-
-    ## load track
-    y,t_chroma,chroma,ref_intervals,ref_labels = dataset[track_id[id]]
-
-    # transcribe 
-    est_intervals,est_labels = transcribe.transcribeChromagram(t_chroma,chroma,"TEMPLATE")
-    
-    # evaluate
-    score,seg_score = evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels)
-    ref_labels = simplifyLabels(ref_labels,alphabet="majmin")
-    ref_evalmatrix,est_evalmatrix = createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels)
-    plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix)
