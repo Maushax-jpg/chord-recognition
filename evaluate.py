@@ -1,40 +1,158 @@
 import dataloader
-import HMM
 import mir_eval
-import madmom
+import transcribe
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import colors
 
-if __name__ == '__main__':
-    dataset_path = "/home/max/ET-TI/Masterarbeit/datasets/beatles/"
-    dataset = dataloader.BeatlesDataset(dataset_path,'madmom',beat_align=True)
-    model_path = "/home/max/ET-TI/Masterarbeit/models/hmm_model_madmom.pkl"   
 
-    model = HMM.load_model(model_path)
 
-    # Chord Recognition Processor
-    crp = madmom.features.chords.DeepChromaChordRecognitionProcessor()
-    decoder = 'hmm'
+def createChordLabelDict(alphabet="majmin"):
+    pitch_class = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
+    chord_labels = {}
+    if alphabet == "majmin":
+        # major chords
+        for i,x in enumerate(pitch_class):
+            chord_labels[f"{x}:maj"] = i     
+        for i,x in enumerate(pitch_class):
+            chord_labels[f"{x}:min"] = i+12 
+        chord_labels["N"] = len(chord_labels)
+    return chord_labels
 
-    songs = [100,101,102,103]  
+def compute_eval_measures(ref_evalmatrix, est_evalmatrix):
+    """Compute evaluation measures
+    Args:
+        ref_evalmatrix (chords, Frames) : logical matrix of reference chords for each timestamp
+        est_evalmatrix (chords, Frames) : logical matrix of estimated chords
+
+    Returns:
+        P (float): Precision
+        R (float): Recall
+        F (float): F-measure
+        num_TP (int): Number of true positives
+        num_FN (int): Number of false negatives
+        num_FP (int): Number of false positives
+
+        see
+        https://meinardmueller.github.io/libfmp/build/html/index.html
+    """
+    TP = np.sum(np.logical_and(ref_evalmatrix, est_evalmatrix))
+    FP = np.sum(est_evalmatrix > 0, axis=None) - TP
+    FN = np.sum(ref_evalmatrix > 0, axis=None) - TP
+    P = 0
+    R = 0
+    F = 0
+    if TP > 0:
+        P = round(TP / (TP + FP),2)
+        R = round(TP / (TP + FN),2)
+        F = round(2 * P * R / (P + R),2)
+    return P, R, F, TP, FP, FN
+
+
+def plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix):
+    fig, ax = plt.subplots(figsize=(10,6))
+    # create TP,FP,FN plot
+    est_TP = np.sum(np.logical_and(ref_evalmatrix, est_evalmatrix))
+    est_FP = est_evalmatrix - est_TP
+    est_FN = ref_evalmatrix - est_TP
+    I_vis = 3 * est_TP + 2 * est_FP + 1 * est_FN
+
+    P, R, F, TP, FP, FN = compute_eval_measures(ref_evalmatrix,est_evalmatrix)
     
-    for index in songs:
-        t_chroma,chroma,ref_intervals,ref_labels = dataset[index]
-        if decoder == 'hmm':
-            # HMM prediction
-            est_intervals,est_labels = model.predict(t_chroma,chroma)
-        else:
-            prediction = crp(chroma)
-            # prediction ->  array([(tstart , stop, label), .. ,(tstart , stop, label)])
-            est_intervals = np.array([[x[0],x[1]] for x in prediction])
-            est_labels = [x[2] for x in prediction]
+    eval_cmap = colors.ListedColormap([[1, 1, 1], [1, 0.3, 0.3], [1, 0.7, 0.7], [0, 0, 0]])
+    eval_bounds = np.array([0, 1, 2, 3, 4])-0.5
+    eval_norm = colors.BoundaryNorm(eval_bounds, 4)
+    eval_ticks = [0, 1, 2, 3]
+    im = ax.imshow(I_vis,  origin='lower', aspect='auto', cmap=eval_cmap, norm=eval_norm,
+                      interpolation='nearest')
+    plt.sca(ax)
+    cbar = plt.colorbar(im, cmap=eval_cmap, norm=eval_norm, boundaries=eval_bounds, ticks=eval_ticks)
+    cbar.ax.set_yticklabels(['TN', 'FP', 'FN', 'TP'])
+    ax.set_xlabel("Time in Frames")
+    chordlabels = createChordLabelDict()
+    ax.set_yticks(list(chordlabels.values()))       
+    ax.set_yticklabels(list(chordlabels.keys()))
+    ax.set_ylabel("Chords")
+    ax.set_title(f"Precision: {P}, Recall: {R},F-measure: {F},TP: {TP}, FP:{FP}, FN:{FN}\n MIREX majmin: {score}, SegMean: {seg_score}")
+    
+    plt.show()
 
-        est_intervals, est_labels = mir_eval.util.adjust_intervals(
+
+def simplifyLabels(labels,alphabet="majmin"):
+    enharmonic_notes = {"Db":"C#","Eb":"D#","Gb":"F#","Ab":"G#","Bb":"A#"}
+    simplified_labels = []
+    for label in labels:
+        chord = mir_eval.chord.split(label, reduce_extended_chords=True)
+        quality = chord[1]
+        if chord[0] in enharmonic_notes:
+            chord[0] = enharmonic_notes[chord[0]]
+        if quality.startswith("maj") or quality.startswith("7"):
+            simplified_labels.append(mir_eval.chord.join(chord[0],"maj"))
+        elif quality.startswith("min"):
+            simplified_labels.append(mir_eval.chord.join(chord[0],"min"))
+        else:
+            # ignore dim and aug for now..
+            simplified_labels.append("N")
+    return simplified_labels
+
+def createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels):
+    # adjust estimated to reference intervals and append "N" chord label if needed
+    est_intervals, est_labels = mir_eval.util.adjust_intervals(
             est_intervals, est_labels, ref_intervals.min(),
             ref_intervals.max(), mir_eval.chord.NO_CHORD,
             mir_eval.chord.NO_CHORD)
-        (intervals,ref_labels,est_labels) = mir_eval.util.merge_labeled_intervals(
-            ref_intervals, ref_labels, est_intervals, est_labels)
-        durations = mir_eval.util.intervals_to_durations(intervals)
-        comparisons = mir_eval.chord.thirds(ref_labels, est_labels)
-        score = mir_eval.chord.weighted_accuracy(comparisons, durations)
-        print(f"{dataset.getTitle(index)}: {round(score*100,2)}%")
+
+    chordlabels = transcribe.createChordLabelDict("majmin")
+    est_evalmatrix = np.zeros((len(chordlabels),t_chroma.shape[0]),dtype=int)
+    ref_evalmatrix = np.zeros((len(chordlabels),t_chroma.shape[0]),dtype=int)
+    for interval,label in zip(est_intervals,est_labels):
+        try: 
+            index_start = int(np.argwhere(t_chroma >= interval[0])[0])
+            index_stop = int(np.argwhere(t_chroma >= interval[1])[0])
+            est_evalmatrix[chordlabels[label],index_start:index_stop] = 1
+        except Exception as e:
+            print(e)
+            return None
+    for interval,label in zip(ref_intervals,ref_labels):
+        try: 
+            index_start = int(np.argwhere(t_chroma >= interval[0])[0])
+            index_stop = int(np.argwhere(t_chroma >= interval[1])[0])
+            ref_evalmatrix[chordlabels[label],index_start:index_stop] = 1
+        except Exception as e:
+            print(e)
+            return None
+    return ref_evalmatrix,est_evalmatrix
+
+# oversegm and udersegm score
+
+def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels):
+    """evaluate Transcription score according to MIREX scheme"""
+    est_intervals, est_labels = mir_eval.util.adjust_intervals(
+            est_intervals, est_labels, ref_intervals.min(),
+            ref_intervals.max(), mir_eval.chord.NO_CHORD,
+            mir_eval.chord.NO_CHORD)
+    (intervals,ref_labels,est_labels) = mir_eval.util.merge_labeled_intervals(
+        ref_intervals, ref_labels, est_intervals, est_labels)
+    durations = mir_eval.util.intervals_to_durations(intervals)
+    comparisons = mir_eval.chord.thirds(ref_labels, est_labels)
+    score = round(mir_eval.chord.weighted_accuracy(comparisons, durations),2)
+    mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
+    return score,mean_seg_score
+
+if __name__ == '__main__':
+    dataset = dataloader.MIRDataset("beatles",use_deep_chroma=True,align_chroma=True,split_nr=3)
+    tracks = dataset.getTrackList()
+    track_id = list(tracks.keys())
+    id = 21 # 21:let it be -> easy and clear harmony
+
+    ## load track
+    y,t_chroma,chroma,ref_intervals,ref_labels = dataset[track_id[id]]
+
+    # transcribe 
+    est_intervals,est_labels = transcribe.transcribeChromagram(t_chroma,chroma,"TEMPLATE")
+    
+    # evaluate
+    score,seg_score = evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels)
+    ref_labels = simplifyLabels(ref_labels,alphabet="majmin")
+    ref_evalmatrix,est_evalmatrix = createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels)
+    plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix)
