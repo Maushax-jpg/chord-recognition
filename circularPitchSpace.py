@@ -60,13 +60,13 @@ def transformChroma(chroma):
     return (rho_F,rho_FR,rho_TR,rho_DR)
 
 
-def getPitchClassEnergyProfile(chroma,threshold=0.6,weighting=0.7):
+def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.7):
     """
     divide each chroma bin energy by the total chroma energy and apply thresholding of 90% by default
        angle weighting puts more emphasis on tonic of a pitch class. 
        This is necessary because a C-Major chord is present in pitch classes C,F and G
     """
-    angle_weighting = lambda x : -((1-weighting)/np.pi) * np.abs(x) + 1
+    angle_weighting = lambda x : -((1-angle_weight)/np.pi) * np.abs(x) + 1
     pitch_class_energy = np.zeros_like(chroma)
 
     chroma_energy = np.square(chroma)
@@ -83,7 +83,7 @@ def getPitchClassEnergyProfile(chroma,threshold=0.6,weighting=0.7):
 
     # apply tresholding for pitchclasses with low relative energy
     pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0            
-    pitch_class_energy = np.multiply(pitch_class_energy,1/total_energy)
+    pitch_class_energy = np.multiply(pitch_class_energy,1/(total_energy+np.finfo(float).eps))
     return pitch_class_energy
 
 
@@ -147,6 +147,27 @@ def plotVector(axis,z,rotation=np.pi/2,**kwargs):
     axis.set_xlim((-1,1))
     axis.set_ylim((-1,1))
     axis.set_axis_off()
+
+def calculateVectorsFR(pitch_class_index=0):
+    n_k = pitch_classes[pitch_class_index].num_accidentals
+    vectors_FR = []
+    for pitch_class in pitch_classes:
+        n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
+        # check if pitch is in fifth related circle
+        if checkIndex(n_f,n_k):
+            n_fr = sym(n_f-7*n_k, 48)
+            vectors_FR.append(np.exp(-1j*2*np.pi*(n_fr/48)))
+    return vectors_FR
+
+def calculateVectorsTR(pitch_class_index=0):
+    n_k = pitch_classes[pitch_class_index].num_accidentals
+    for pitch_class in pitch_classes:
+        n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
+        # check if pitch is in fifth related circle
+        if checkIndex(n_f,n_k):
+            n_tr = sym(n_f-7*n_k-12,24)
+            rho_TR = np.exp(-1j*2*np.pi*((n_tr)/24))
+
 
 def plotCircleOfFifths(ax):
     plotHalftoneGrid(ax,84)
