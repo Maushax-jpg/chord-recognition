@@ -8,6 +8,7 @@ import librosa.display
 import numpy as np
 import scipy
 import json
+import circularPitchSpace as cps
 
 SAMPLING_RATE = 44100
 HOP_LENGTH = 4410
@@ -38,7 +39,8 @@ class MIRDataset(Dataset):
         t,chroma = self.calculateChroma(track_id)
         ref_intervals,ref_labels = self.getAnnotations(track_id)
         audio,_ = self._tracks[track_id].audio
-        return audio,t,chroma,ref_intervals,ref_labels
+        cps_features = cps.transformChroma(chroma)
+        return audio,t,chroma,cps_features,ref_intervals,ref_labels
 
     def getTrackIDs(self):
         """returns list of available track IDs that can be used to access the dataset tracks"""
