@@ -1,6 +1,8 @@
 import numpy as np
+import mir_eval
 import matplotlib.pyplot as plt
 from collections import namedtuple
+from matplotlib.patches import Patch
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 
@@ -30,10 +32,16 @@ def transformChroma(chroma):
     """explain away
     returns some ndarrays..
     """    
+    if chroma.ndim == 1:
+        chroma = np.reshape(chroma, (1, 12))
+    elif chroma.shape[1] != 12:
+        raise ValueError("Array shape must be (X, 12).")
+    
     rho_F  = np.zeros((chroma.shape[0],),dtype=complex)
     rho_FR = np.zeros_like(chroma,dtype=complex)
     rho_TR = np.zeros_like(chroma,dtype=complex)
     rho_DR = np.zeros_like(chroma,dtype=complex)
+
     # iterate over all time steps
     for time_index in range(chroma.shape[0]):
         # calculte key related circles
@@ -59,7 +67,24 @@ def transformChroma(chroma):
                     rho_DR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_dr/12))
     return (rho_F,rho_FR,rho_TR,rho_DR)
 
-
+def getNumberOfNotesInKey(chroma,threshold=0.3):
+    if chroma.ndim == 1:
+        chroma = np.reshape(chroma, (1, 12))
+    elif chroma.shape[1] != 12:
+        raise ValueError("Array shape must be (X, 12).")
+    notes_in_key = np.zeros_like(chroma,dtype=int)
+    for time_index in range(chroma.shape[0]):
+        # calculte key related circles
+        for x in pitch_classes:
+            n_k = x.num_accidentals
+            key_index = x.pitch_class_index
+            # iterate over all chroma bins with correct index
+            for pitch_class,chroma_bin in zip(pitch_classes,chroma[time_index,:]):
+                n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
+                # check if real pitch is part of the key n_k
+                if checkIndex(n_f,n_k) and chroma_bin > threshold:
+                    notes_in_key[time_index,x.pitch_class_index] += 1
+    return notes_in_key
 def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.7):
     """
     divide each chroma bin energy by the total chroma energy and apply thresholding of 90% by default
@@ -85,7 +110,6 @@ def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.7):
     pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0            
     pitch_class_energy = np.multiply(pitch_class_energy,1/(total_energy+np.finfo(float).eps))
     return pitch_class_energy
-
 
 def scaleVector(x,y,alpha):
     m,phi = cartesian2polar(x,y)
@@ -167,7 +191,6 @@ def calculateVectorsTR(pitch_class_index=0):
         if checkIndex(n_f,n_k):
             n_tr = sym(n_f-7*n_k-12,24)
             rho_TR = np.exp(-1j*2*np.pi*((n_tr)/24))
-
 
 def plotCircleOfFifths(ax):
     plotHalftoneGrid(ax,84)
@@ -284,6 +307,158 @@ def plotFeatures(ax_list,rho_F,rho_FR,rho_TR,rho_DR,color='r'):
             plotVector(ax_list[4][i-6],rho_TR[i],**kwargs)    
             plotVector(ax_list[6][i-6],rho_DR[i],**kwargs)
 
+def plotDiatonicTriads(ax,pitch_class_index=0,tonality="major"):
+    major = mir_eval.chord.quality_to_bitmap("maj")
+    minor = mir_eval.chord.quality_to_bitmap("min")
+    dim = mir_eval.chord.quality_to_bitmap("dim")
+    aug = mir_eval.chord.quality_to_bitmap("aug")
+    colors = ["blue", "green", "red", "orange", "purple", "grey", "black"]
+    if tonality == "major":
+        n_k = pitch_class_index
+        title = f'{pitch_classes[pitch_class_index].name} major   '
+        labels = [f"{pitch_classes[pitch_class_index].name}",
+                f"{pitch_classes[(pitch_class_index + 2) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 4) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 5) % 12].name}",
+                f"{pitch_classes[(pitch_class_index + 7) % 12].name}",
+                f"{pitch_classes[(pitch_class_index + 9) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 11) % 12].name}°"
+                ]
+        chords = [np.roll(major, pitch_class_index),
+                np.roll(minor, pitch_class_index + 2),
+                np.roll(minor, pitch_class_index + 4),
+                np.roll(major, pitch_class_index + 5),
+                np.roll(major, pitch_class_index + 7),
+                np.roll(minor, pitch_class_index + 9),
+                np.roll(dim, pitch_class_index + 11)
+                ]
+        chords = np.vstack(chords)
+    elif tonality=="harmonic minor":
+        # a minor key is represented in its major parallel (three halftones up)
+        n_k = (pitch_class_index + 3) % 12
+        title = f'{pitch_classes[pitch_class_index].name} minor harm '
+        labels = [f"{pitch_classes[pitch_class_index].name}m",
+                f"{pitch_classes[(pitch_class_index + 2) % 12].name}°",
+                f"{pitch_classes[(pitch_class_index + 3) % 12].name}+",
+                f"{pitch_classes[(pitch_class_index + 5) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 7) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 8) % 12].name}",
+                f"{pitch_classes[(pitch_class_index + 11) % 12].name}°"
+                ]
+        chords = [np.roll(minor, pitch_class_index),
+                np.roll(dim, pitch_class_index + 2),
+                np.roll(aug, pitch_class_index + 3),
+                np.roll(minor, pitch_class_index + 5),
+                np.roll(major, pitch_class_index + 7),
+                np.roll(major, pitch_class_index + 8),
+                np.roll(dim, pitch_class_index + 11)
+                ]
+        chords = np.vstack(chords)
+    else:
+        # a minor key is represented in its major parallel (three halftones up)
+        n_k = (pitch_class_index + 3) % 12
+        title = f'{pitch_classes[pitch_class_index].name} minor   '
+        labels = [f"{pitch_classes[pitch_class_index].name}m",
+                f"{pitch_classes[(pitch_class_index + 2) % 12].name}°",
+                f"{pitch_classes[(pitch_class_index + 3) % 12].name}",
+                f"{pitch_classes[(pitch_class_index + 5) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 7) % 12].name}m",
+                f"{pitch_classes[(pitch_class_index + 8) % 12].name}",
+                f"{pitch_classes[(pitch_class_index + 10) % 12].name}"
+                ]
+        chords = [np.roll(minor, pitch_class_index),
+                np.roll(dim, pitch_class_index + 2),
+                np.roll(major, pitch_class_index + 3),
+                np.roll(minor, pitch_class_index + 5),
+                np.roll(minor, pitch_class_index + 7),
+                np.roll(major, pitch_class_index + 8),
+                np.roll(major, pitch_class_index + 10)
+                ]
+        chords = np.vstack(chords)
+
+    plotCircleOfFifthsRelated(ax[0],n_k)
+    plotCircleOfThirdsRelated(ax[1],n_k)
+    plotCircleOfDiatonicRelated(ax[2],n_k)  
+
+    _,r_FR,r_TR,r_DR = transformChroma(chords) 
+    for i in range(len(chords)):
+        # rotate vector for plot
+        z = r_FR[i, n_k] * 1j
+        ax[0].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+        z = r_TR[i, n_k] * 1j
+        ax[1].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+        z = r_DR[i, n_k] * 1j
+        ax[2].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+
+    legend_handles = [Patch(color=color) for color in colors]
+    legend = ax[3].legend(legend_handles, labels, loc='center left', bbox_to_anchor=(0, 0.5), title=title, handlelength=1, handletextpad=0.5, fontsize=8, title_fontsize=10, facecolor='lightgray', framealpha=0.8)
+    ax[3].add_artist(legend)
+    for x in ax:
+        x.set_xlim(-1.5,1.5)
+        x.set_ylim(-1.5,1.5)
+    ax[3].axis("off")
+
+def plotDiatonicTetrads(pitch_class_index=0,tonality="major"):
+    fig, ax = plt.subplots(1, 4, figsize=(11, 11/3))
+    maj7 = mir_eval.chord.quality_to_bitmap("maj7")
+    min7 = mir_eval.chord.quality_to_bitmap("min7")
+    hdim7 = mir_eval.chord.quality_to_bitmap("hdim7")
+    dim7 = mir_eval.chord.quality_to_bitmap("dim7")
+
+    colors = ["blue", "green", "red", "orange", "purple", "grey", "black"]
+    if tonality == "major":
+        n_k = pitch_class_index
+        title = f'Triads of {pitch_classes[pitch_class_index].name} major'
+        labels = [f"{pitch_classes[pitch_class_index].name}maj7",
+                f"{pitch_classes[(pitch_class_index + 2) % 12].name}min7",
+                f"{pitch_classes[(pitch_class_index + 4) % 12].name}min7",
+                f"{pitch_classes[(pitch_class_index + 5) % 12].name}maj7",
+                f"{pitch_classes[(pitch_class_index + 7) % 12].name}7",
+                f"{pitch_classes[(pitch_class_index + 9) % 12].name}min7",
+                f"{pitch_classes[(pitch_class_index + 11) % 12].name}hdim7"
+                ]
+        chords = [np.roll(maj7, pitch_class_index),
+                np.roll(min7, pitch_class_index + 2),
+                np.roll(min7, pitch_class_index + 4),
+                np.roll(maj7, pitch_class_index + 5),
+                np.roll(maj7, pitch_class_index + 7),
+                np.roll(min7, pitch_class_index + 9),
+                np.roll(hdim7, pitch_class_index + 11)
+                ]
+        chords = np.vstack(chords)
+    plotCircleOfFifths(ax[0])
+    plotCircleOfFifthsRelated(ax[1],n_k)
+    plotCircleOfThirdsRelated(ax[2],n_k)
+    plotCircleOfDiatonicRelated(ax[3],n_k)  
+
+    r_F,r_FR,r_TR,r_DR = transformChroma(chords) 
+    for i in range(len(chords)):
+        # rotate vector for plot
+        z = r_F[i] * 1j
+        ax[0].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+        z = r_FR[i, n_k] * 1j
+        ax[1].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+        z = r_TR[i, n_k] * 1j
+        ax[2].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+        z = r_DR[i, n_k] * 1j
+        ax[3].plot([0, z.real], [0, z.imag], color=colors[i], markersize=2)
+
+    legend_handles = [Patch(color=color) for color in colors]
+    fig.subplots_adjust(top=0.8) 
+    fig.legend(legend_handles, labels, loc='upper center', ncol=len(labels),
+                title=title, handlelength=1, handletextpad=0.5, fontsize=8,
+                  title_fontsize=10, facecolor='lightgray', framealpha=0.8)
+
+    for x in ax:
+        x.set_xlim(-1.5,1.5)
+        x.set_ylim(-1.5,1.5)
+
+    plt.show()
 
 
-    
+if __name__=="__main__":
+    fig,ax = plt.subplots(3,4,figsize=(11,11))
+    plotDiatonicTriads(ax[0,:],0,"major")
+    plotDiatonicTriads(ax[1,:],9,"minor")
+    plotDiatonicTriads(ax[2,:],9,"harmonic minor")
+    plt.show()

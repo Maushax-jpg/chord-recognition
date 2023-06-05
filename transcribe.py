@@ -72,13 +72,13 @@ def transcribeChromagram(t_chroma,chroma,transcriber="CRP"):
 
 if __name__=='__main__':
 
-    dataset = dataloader.MIRDataset("beatles",use_deep_chroma=True,align_chroma=True,split_nr=8)
+    dataset = dataloader.MIRDataset("beatles",use_deep_chroma=True,align_chroma=True,split_nr=3)
    
     tracks = dataset.getTrackList()
     track_id = tracks.keys()
 
     for id in track_id:
-        y,t_chroma,chroma,ref_intervals,ref_labels = dataset[id]
+        audio,t_chroma,chroma,cps_features,ref_intervals,ref_labels = dataset[id]
         results = {}
         for transcriber in ["CRP","TEMPLATE"]:
             # transcribe
