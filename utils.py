@@ -53,13 +53,11 @@ def plotChroma(ax,chroma,time=(0,10),sr=44100,hop_length=4410):
     ax.set_xlim(time)
     ax.set_xlabel('Time in s')
 
-def plotCqt(ax,audiopath,time=(0,10)):
-    y,_ = librosa.load(audiopath,sr=44100)
-    cqt = librosa.cqt(y,hop_length=4410,sr=44100)
+def plotCqt(ax,signal):
+    cqt = librosa.cqt(signal,hop_length=4410,sr=44100)
     librosa.display.specshow(librosa.amplitude_to_db(np.abs(cqt), ref=np.max),y_axis='cqt_note',cmap='viridis',
                                 ax=ax,x_axis='time',sr=44100,hop_length=4410)
-    ax.set_xlim((time))
-
+                                
 def plotAudioWaveform(ax,y,time=(0,10)):
     t = np.linspace(0,(len(y)-1)/44100,len(y))
     mask = (t >= time[0]) & (t <= time[1])

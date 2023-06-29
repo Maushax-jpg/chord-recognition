@@ -1,4 +1,4 @@
-import HMM
+import circularPitchSpace as cps
 import madmom
 import dataloader
 import evaluate
@@ -35,7 +35,7 @@ def plotTemplates(labels,templates):
     ax.set_yticklabels(labels);
     return fig
 
-def transcribeChromagram(t_chroma,chroma,transcriber="CRP"):
+def transcribeChromagram(t_chroma,chroma,transcriber="CRP",entropy=None):
     if transcriber == "CRP":
         print("Transcribing with Chord Recognition Processor")
         crp = madmom.features.chords.DeepChromaChordRecognitionProcessor()
@@ -43,14 +43,33 @@ def transcribeChromagram(t_chroma,chroma,transcriber="CRP"):
         est_intervals = np.array([[x[0],x[1]] for x in prediction])
         est_labels = [x[2] for x in prediction]
         return est_intervals,est_labels
-    elif transcriber == "HMM":
-        print("Transcribing with Hidden Markov Model")
-        model_path = "/home/max/ET-TI/Masterarbeit/models/hmm_model.pkl"   
-        model = HMM.load_model(model_path)
-        est_intervals,est_labels = model.predict(t_chroma,chroma)
-        return est_intervals,est_labels
+    elif transcriber == "CPS":
+        print("Transcribing with Circular Pitch space")        
+        est_intervals,est_labels = cps.transcribeChromagram(t_chroma,chroma)
+        intervals = []
+        labels =[]
+        skip = []
+        for i,x in enumerate(zip(est_intervals,est_labels)):
+            interval,label = x
+            try:
+                mean_entropy = np.mean(entropy[int(10*interval[0]):int(10*interval[1])])
+                if mean_entropy < 1.2:
+                    skip.append(i)
+                    est_intervals[i-1][1] = est_intervals[i+1][0]  # adjust interval bounds 
+            except IndexError:
+                continue
+            
+        for i in range(len(est_labels)):
+            if i in skip:
+                continue
+            else:
+                labels.append(est_labels[i])
+                intervals.append(est_intervals[i])
+        intervals = np.array(intervals)
+        return intervals,labels
     elif transcriber == "TEMPLATE":
         print("Transcribing with Chord Templates")
+        
         labels,templates = createChordTemplates()
         max_vals = np.max(chroma, axis=1)
         chroma_norm = chroma / (max_vals[:,None]+np.finfo(float).eps)
@@ -78,14 +97,21 @@ if __name__=='__main__':
     track_id = tracks.keys()
 
     for id in track_id:
-        audio,t_chroma,chroma,cps_features,ref_intervals,ref_labels = dataset[id]
+        audio,features,target = dataset[id]
+        ref_intervals,ref_labels = target
+        chroma = features["chroma"]
+        t_chroma = features["time"]
+        rms = features["rms"]
+        entropy = features["entropy"]
+        title = dataset.getTitle(id)
         results = {}
-        for transcriber in ["CRP","TEMPLATE"]:
+        for transcriber in ["CPS","TEMPLATE"]:
             # transcribe
-            est_intervals,est_labels = transcribeChromagram(t_chroma,chroma,transcriber)
+            est_intervals,est_labels = transcribeChromagram(t_chroma,chroma,transcriber,entropy)
+
              # evaluate
             score,seg_score = evaluate.evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels)
             ref_evalmatrix,est_evalmatrix = evaluate.createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels)
-            evaluate.plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix)
+            evaluate.plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix,title,transcriber)
             P, R, F, TP, FP, FN = evaluate.compute_eval_measures(ref_evalmatrix,est_evalmatrix)
             print(f"MajMin: {score}, MeanSeg: {seg_score}, P: {P}, R: {R}, F: {F}, TP: {TP}, FP: {FP}, FN: {FN}")

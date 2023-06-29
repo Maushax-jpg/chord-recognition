@@ -48,7 +48,7 @@ def compute_eval_measures(ref_evalmatrix, est_evalmatrix):
     return P, R, F, TP, FP, FN
 
 
-def plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix):
+def plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix,title,transcriber):
     fig, ax = plt.subplots(figsize=(10,6))
     # create TP,FP,FN plot
     est_TP = np.sum(np.logical_and(ref_evalmatrix, est_evalmatrix))
@@ -72,8 +72,8 @@ def plotEvaluationMatrix(ref_evalmatrix,est_evalmatrix):
     ax.set_yticks(list(chordlabels.values()))       
     ax.set_yticklabels(list(chordlabels.keys()))
     ax.set_ylabel("Chords")
-    ax.set_title(f"Precision: {P}, Recall: {R},F-measure: {F},TP: {TP}, FP:{FP}, FN:{FN}")
-    plt.show()
+    ax.set_title(f"{title} Precision: {P}, Recall: {R},F-measure: {F},TP: {TP}, FP:{FP}, FN:{FN}")
+    plt.savefig(f"../transcription_results/{transcriber}_{title}.png")
 
 
 def simplifyLabels(labels,alphabet="majmin"):
@@ -88,6 +88,8 @@ def simplifyLabels(labels,alphabet="majmin"):
             simplified_labels.append(mir_eval.chord.join(chord[0],"maj"))
         elif quality == "min":
             simplified_labels.append(mir_eval.chord.join(chord[0],"min"))
+        elif quality == "dim":
+            simplified_labels.append(mir_eval.chord.join(chord[0],"dim"))
         elif chord[0] == "N":
             simplified_labels.append("N")
         else:
@@ -112,17 +114,15 @@ def createEvalMatrix(t_chroma,est_intervals,est_labels,ref_intervals,ref_labels)
             index_start = int(np.argwhere(t_chroma >= interval[0])[0])
             index_stop = int(np.argwhere(t_chroma >= interval[1])[0])
             est_evalmatrix[chordlabels[label],index_start:index_stop] = 1
-        except Exception as e:
-            print(e)
-            return None
+        except KeyError:
+            continue
     for interval,label in zip(ref_intervals,ref_labels):
         try: 
             index_start = int(np.argwhere(t_chroma >= interval[0])[0])
             index_stop = int(np.argwhere(t_chroma >= interval[1])[0])
             ref_evalmatrix[chordlabels[label],index_start:index_stop] = 1
-        except Exception as e:
-            print(e)
-            return None
+        except KeyError:
+            continue
     return ref_evalmatrix,est_evalmatrix
 
 # oversegm and udersegm score
