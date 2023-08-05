@@ -1,12 +1,15 @@
-import pickle
+import numpy as np
+from scipy.fftpack import dct, idct
 import matplotlib.pyplot as plt
+# Generate random data (size 8x10)
+x = np.arange(0,36)
 
-with open("/home/max/ET-TI/Masterarbeit/datasets/beatles/chroma/1_deep_chroma.pkl", "rb") as f:
-    df = pickle.load(f)
+y = np.ones((36,3))
+y[:,0] = x
+y[:,1] = x
+data = y.reshape(3,12,3)
+print(data[0,:,0])
 
-# Group the DataFrame by label
-grouped = df.groupby('label')
 
-for label, group in grouped:
-    chromavectors = group.drop('label', axis=1).values
+
 

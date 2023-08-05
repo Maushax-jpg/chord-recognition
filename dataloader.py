@@ -30,7 +30,6 @@ class MIRDataset(Dataset):
         return len(self._dataset.track_ids)
     
     def __getitem__(self, track_id):
-        print(f"Loaded \n{self._tracks[track_id].title} ID: {track_id}")
         target = self.getAnnotations(track_id)
         audio_path = self._tracks[track_id].audio_path
         return audio_path, target

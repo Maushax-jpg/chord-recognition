@@ -5,7 +5,7 @@ def plotVector(ax, z):
     ax.plot([0,z.real], [0,z.imag], '-x', color="r", markersize=4)
     ax.set_xlim(-1.5, 1.5)
     ax.set_ylim(-1.5, 1.5)
-
+4
 def plotCpsPrediction(fig,gs,chroma,chroma_index):
     r_F,r_FR,r_TR,r_DR = cps.transformChroma(chroma)
 
