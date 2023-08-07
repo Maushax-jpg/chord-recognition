@@ -30,13 +30,14 @@ class FeatureProcessor():
 
     def deepChroma(self):
         """generates a chromagram with a deep neural network"""
-        return self._chroma_processor(self._audio,normalize=True)
+        chroma = self._chroma_processor(self._audio,normalize=True)
+        return self.normalizeChroma(chroma)
     
     def clpChroma(self):
         """generates a chromagram with techniques that reduce overtone influence"""
         return madmom.audio.chroma.CLPChroma(self._audio,norm=True,fps=10)
     
-    def crpChroma(self,nCRP=55, n=32768):
+    def crpChroma(self,nCRP=55, n=49152):
         overlap = n // 2
         midi_note_start = 12
         midi_note_stop = 120
@@ -78,7 +79,7 @@ class FeatureProcessor():
         y_harm = librosa.effects.harmonic(y=y, margin=8)
         # calculate chroma and transpose! shape: (t x 12)
         chroma = librosa.feature.chroma_cqt(y=y_harm, sr=self._sampling_rate,hop_length=self._hop_length).T
-        return chroma
+        return self.normalizeChroma(chroma)
     
     def beats(self):
         # beat estimation is not very stable for short time intervals
@@ -101,11 +102,13 @@ class FeatureProcessor():
             quit()
         self._chroma_processor = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=[path])
     
-    def alignChroma(self, chroma, beats, time_interval=(0,10)):
+    def alignChroma(self, chroma, beats, time_interval=(0,10),hop_length = None):
         """smooth chromagram in between beats to create a beat aligned chroma"""
+        if hop_length is None:
+            hop_length = self._hop_length
         chroma_aligned = np.copy(chroma)
         # Calulate the number of frames within the time interval
-        num_frames = int((time_interval[1] - time_interval[0]) * self._sampling_rate / self._hop_length)
+        num_frames = int((time_interval[1] - time_interval[0]) * self._sampling_rate / hop_length)
         time_vector = np.linspace(time_interval[0], time_interval[1], num_frames, endpoint=False)
 
         for b0,b1 in zip(beats[:-1],beats[1:]):
@@ -143,9 +146,11 @@ class FeatureProcessor():
                 madmom.audio.signal.FramedSignal(audiopath, norm=True, dtype=float, fps=10)
         )     
 
-    def selectChroma(self,chroma,time_interval=(0,10)):
+    def selectChroma(self,chroma,time_interval=(0,10),hop_length=None):
         """select a time interval  of a precomputed chromagram"""
-        selection = librosa.time_to_frames(time_interval,sr=self._sampling_rate,hop_length=self._hop_length)
+        if hop_length is None:
+            hop_length = self._hop_length
+        selection = librosa.time_to_frames(time_interval,sr=self._sampling_rate,hop_length=hop_length)
         idx = tuple([slice(*list(selection)),slice(None)])
         chroma_selection = np.copy(chroma[idx])
         time_vector = np.round(np.linspace(time_interval[0], time_interval[1], chroma_selection.shape[0], endpoint=False),1)
@@ -158,3 +163,59 @@ class FeatureProcessor():
             if x >= time_interval[0] and x <= time_interval[1]:
                 selected.append(x)
         return np.array(selected)
+
+
+def sumChromaDifferences(chroma):
+    # rearange chroma vector
+    cq_fifth = np.zeros_like(chroma,dtype=float)
+    for q in range(12):
+        cq_fifth[:,q] = chroma[:,(q * 7) % 12]
+
+    gamma_diff = np.zeros_like(chroma,dtype=float)
+    for q in range(12):
+        gamma_diff[:,q] = np.abs(cq_fifth[:,(q+1) % 12] - cq_fifth[:,q]) 
+    # normalize to one
+    gamma = 1- np.sum(gamma_diff,axis=1)/2
+    return gamma
+
+def negativeSlope(chroma):
+    KSPARSE = 0.038461538461538464 # normalization constant
+    gamma = np.zeros(chroma.shape[0],dtype=float)
+    for t in range(chroma.shape[0]):
+        y = np.sort(chroma[t,:])[::-1] # sort descending
+        # linear regression using numpy
+        A = np.vstack([np.arange(12), np.ones((12,))]).T
+        k, _ = np.linalg.lstsq(A, y, rcond=None)[0]
+        #rescaled feature
+        gamma[t] = 1 - np.abs(k)/KSPARSE
+    return gamma
+
+def shannonEntropy(chroma):
+    """calculates the Shannon entropy of a chromagram for every timestep. The chromavector is treated as a random variable."""
+    if chroma.shape[1] != 12:
+        ax = 0
+    else:
+        ax = 1
+    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=ax)/np.log2(12)
+
+def nonSparseness(chroma):
+    norm_l1 = np.linalg.norm(chroma, ord=1,axis=1)
+    norm_l2 = np.linalg.norm(chroma, ord=2,axis=1)
+    gamma = 1 - ((np.sqrt(12)-norm_l1/norm_l2) / (np.sqrt(12)-1))
+    return gamma
+
+def flatness(chroma):
+    geometric_mean = np.product(chroma,axis=1)**(1/12)
+    arithmetic_mean = np.sum(chroma,axis=1) / 12
+    return geometric_mean/arithmetic_mean
+
+def angularDeviation(chroma):
+    # rearange chroma vector in fifth
+    cq_fifth = np.zeros_like(chroma,dtype=float)
+    for q in range(12):
+        cq_fifth[:,q] = chroma[:,(q * 7) % 12]
+
+    angles = np.exp((2*np.pi*1j*np.arange(12))/12)
+    angles = np.tile(angles,(chroma.shape[0],1)) # repeat vector
+    gamma = np.abs(np.sum(cq_fifth*angles,axis=1))
+    return np.sqrt(1- gamma)

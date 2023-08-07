@@ -1,7 +1,7 @@
 import librosa
 import librosa.display
 import numpy as np
-from matplotlib import rc
+import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 def buffer(X: np.ndarray, n: int, p: int,zeros : int,window : np.ndarray) -> np.ndarray:
@@ -18,9 +18,6 @@ def buffer(X: np.ndarray, n: int, p: int,zeros : int,window : np.ndarray) -> np.
         data[startIndex : startIndex + n, column] = X[i : i + n] * window
     return data
 
-# Enable LaTeX support in matplotlib
-# rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
-# rc('text', usetex=True)
 
 def formatChordLabel(chordlabel):
     # latex formatting of chordlabels
@@ -29,6 +26,8 @@ def formatChordLabel(chordlabel):
     except ValueError:
         note = chordlabel
         suffix = ""
+    if note[-1] == '#':
+        note = note[:-1]+"\\#"
     try:
         chordtype,bassnote = suffix.split('/')
         if bassnote.startswith("b"):
@@ -37,30 +36,29 @@ def formatChordLabel(chordlabel):
     except ValueError:
         chordtype = suffix 
         bassnote = ""
-    if suffix.startswith('maj7'):
+    if chordtype.startswith('maj7'):
         # Major seventh chord
-        print(f"${note}^{{maj7}}{bassnote}$")
         return f"${note}^{{maj7}}{bassnote}$"
-    elif suffix.startswith("maj"):
+    elif chordtype.startswith("maj"):
         # Major chord
         return f"${note}{bassnote}$"
-    elif suffix.startswith('min7'):
+    elif chordtype.startswith('min7'):
         # Minor seventh chord    
         return f"${note}m^7{bassnote}$"
-    elif suffix.startswith("min"):
+    elif chordtype.startswith("min"):
         return f"${note}m{bassnote}$"
-    elif suffix.startswith('7'):
+    elif chordtype.startswith('7'):
         # Dominant seventh chord  
         return f"${note}^7{bassnote}$"
-    elif suffix.startswith('aug'):
+    elif chordtype.startswith('aug'):
         # Augmented chord      
         return f"${note}^+$"
-    elif suffix.startswith('dim'):
+    elif chordtype.startswith('dim'):
         # Diminished Chord
         return f"${note}^°$"
     else:
         # Major chord
-        return note
+        return f"${note}$"
 
 def plotChromagram(ax,t,chroma, beats=None):
     librosa.display.specshow(chroma.T,x_coords=t.T,x_axis='time', y_axis='chroma', cmap="Reds", ax=ax, vmin=0, vmax=1)
@@ -76,18 +74,12 @@ def plotChordAnnotations(ax,target,estimation=None,time_interval=(0,10)):
         if ref_intervals[i,1] < time_interval[0] or ref_intervals[i,0] > time_interval[1]:
             continue
         # set start position of rectangular patch
-        if ref_intervals[i,0] < time_interval[0]:
-            t_start = time_interval[0]
-        else: 
-            t_start = ref_intervals[i,0]
-        if ref_intervals[i,1] > time_interval[1]:
-            t_stop = time_interval[1]
-        else:
-            t_stop = ref_intervals[i,1]
+        t_start = max(ref_intervals[i,0],time_interval[0])
+        t_stop = min(ref_intervals[i,1],time_interval[1])
 
-        rect = patches.Rectangle((t_start, 0),t_stop - t_start , 1, linewidth=1, edgecolor="k", facecolor=colors[i%len(colors)])
+        rect = patches.Rectangle((t_start, 0),t_stop - t_start , 1.2, linewidth=1, edgecolor="k", facecolor=colors[i%len(colors)])
         ax.add_patch(rect)
-        ax.text(t_start+ (t_stop - t_start)/2, 0.5, label,verticalalignment="center",horizontalalignment='center', fontsize=10, color='k')
+        ax.text(t_start+ (t_stop - t_start)/2, 0.6, formatChordLabel(label),verticalalignment="center",horizontalalignment='center', fontsize=10, color='k')
     ax.set_xlim(time_interval)
     ax.set_ylim(0,2)
     ax.axis("off")
