@@ -2,38 +2,73 @@ import circularPitchSpace as cps
 import madmom
 import dataloader
 import evaluate
-import utils
 import mir_eval
-import matplotlib.pyplot as plt
 import numpy as np
 
+def postprocessing(time_vector,unfiltered_labels,complexity,complexity_threshold=4.0,minimum_duration=0.4):
+    intervals = []
+    labels = []
+    t_start = time_vector[0]
+    current_label = "N"
+    for i,label in enumerate(unfiltered_labels[:-1]):
+        if label == current_label:
+            continue
+        elif complexity[i] > complexity_threshold:
+            continue
+        
+        # check duration of chord change (excluding first chord change!)
+        if time_vector[i] - t_start < minimum_duration and len(intervals) > 0:
+            # interval too short, extend previous interval  and discard chord change
+            intervals[-1][1] = time_vector[i]
+        else:
+            labels.append(current_label)
+            intervals.append([t_start,time_vector[i]])
+        # initialize new interval
+        current_label = label
+        t_start = time_vector[i]
+    intervals = np.array(intervals)
+    return intervals,labels
 
-def createChordTemplates():
-    """
-    creates templates for Major and Minor chords
-    return: list Chord_labels , ndarray templates (24x12)
-    """
-    pitch_class = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
-    chord_labels = []
-    templates = np.zeros((24,12),dtype=float)
-    # major chords
-    for i,x in enumerate(pitch_class):
-        chord_labels.append(f"{x}:maj")
-        templates[i,:] = np.roll(mir_eval.chord.quality_to_bitmap('maj'),i)
-    # minor chords
-    for i,x in enumerate(pitch_class):
-        chord_labels.append(f"{x}:min")
-        templates[i+12,:] = np.roll(mir_eval.chord.quality_to_bitmap('min'),i)
-    return chord_labels,templates
 
-def plotTemplates(labels,templates):
-    fig,ax = plt.subplots()
-    ax.imshow(templates)
-    ax.set_xticks([0,2,4,5,7,9,11])
-    ax.set_xticklabels(["C","D","E","F","G","A","B"])
-    ax.set_yticks(range(len(labels)))
-    ax.set_yticklabels(labels);
-    return fig
+def transcribeTemplates(time_vector,chroma,complexity,complexity_threshold=4,minimum_duration=0.5):
+    labels,templates = createChordTemplates()
+    max_vals = np.max(chroma, axis=1)
+    chroma_norm = chroma / (max_vals[:,None]+np.finfo(float).eps)
+    correlation = np.dot(templates,chroma_norm.T)
+    unfiltered_labels = [labels[np.argmax(correlation[:,i])] for i in range(chroma.shape[0])]
+
+    intervals,labels = postprocessing(time_vector,unfiltered_labels,complexity,complexity_threshold,minimum_duration)
+    return intervals,labels
+
+def transcribeCPS(time_vector,chroma,complexity,complexity_threshold=4.0,minimum_duration=0.4):
+    r_F,r_FR,r_TR,r_DR = cps.transformChroma(chroma)
+
+    # create normalized major key prototypes
+    prototypes = np.zeros((12,7,12),dtype=float)#
+    chord_qualities = ["maj","min","min","maj","maj","min","dim"]
+    pitch_classes = [0,2,4,5,7,9,11]
+    templates =  np.array([np.roll(mir_eval.chord.quality_to_bitmap(quality)/3,pitch) for quality,pitch in zip(chord_qualities,pitch_classes)])
+    for i in range(12):
+        prototypes[i,:,:] = np.roll(templates,i,axis=1) # normalize with l1 norm
+
+    # estimate key for analysis
+    keys = np.argmax(cps.getPitchClassEnergyProfile(chroma),axis=1)
+
+    unfiltered_labels = []
+    for t in range(chroma.shape[0]):
+        pitch_class_index = keys[t]
+        __build_class__,x_FR,x_TR,x_DR = cps.transformChroma(prototypes[pitch_class_index,:,:])
+        # calculate minimum distance between prototype chord and feature
+        d_TR = np.abs(r_TR[t,pitch_class_index] - x_TR[:,pitch_class_index])
+        d_FR = np.abs(r_FR[t,pitch_class_index] - x_FR[:,pitch_class_index])
+        # d_DR = np.abs(r_DR[t,pitch_class_index] - x_DR[:,pitch_class_index])
+        index_min_distance = np.argsort(d_TR+d_FR)[0]
+        estimated_pitch_class = (pitch_class_index + pitch_classes[index_min_distance]) % 12
+        unfiltered_labels.append(cps.pitch_classes[estimated_pitch_class].name)
+    intervals,labels = postprocessing(time_vector,unfiltered_labels,complexity,
+                                      complexity_threshold=complexity_threshold,minimum_duration=minimum_duration)
+    return intervals,labels
+
 
 def transcribeChromagram(t_chroma,chroma,transcriber="CRP",entropy=None):
     if transcriber == "CRP":

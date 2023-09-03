@@ -3,37 +3,66 @@ import mir_eval
 import matplotlib.pyplot as plt
 from collections import namedtuple
 from matplotlib.patches import Patch
-import features
+import utils
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 
     pitch_class_index : index of pitch class in chroma vector and list of pitch_classes
     chromatic_index : index n_c for pitch class in pitch space 
     num_accidentals : The number of accidentals n_k present in the key of this pitch class 
-    pitchspace_index : index of pitch class in array of vectors in r_FR,r_TR and r_DR 
 """
 
 pitch_classes = [
             PitchClass("C",0,-2,0),
-            PitchClass("C#",1,-1,-5), # use enharmonic note with lowest accidentals (Db)! (C# has 7 crosses) 
+            PitchClass("Db",1,-1,-5), # use enharmonic note with lowest accidentals (Db)! (C# has 7 crosses) 
             PitchClass('D',2,0,2),
-            PitchClass("D#",3,1,-3),  #Eb
+            PitchClass("Eb",3,1,-3), 
             PitchClass("E",4,2,4),
             PitchClass("F",5,3,-1),
             PitchClass("F#",6,4,6),
             PitchClass("G",7,5,1),
-            PitchClass("G#",8,-6,-4), # Ab
+            PitchClass("Ab",8,-6,-4), # Ab
             PitchClass("A",9,-5,3),
-            PitchClass("A#",10,-4,-2), #Bb
+            PitchClass("Bb",10,-4,-2), #Bb
             PitchClass("B",11,-3,5)
 ]
-"""A sorted list of Pitch classes: [C, C#, .. , A#, B]"""
+"""A sorted list of Pitch classes: [C, C#/Db, .. , A#, B]"""
+
+
+enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#","G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
+
+def enharmonicNote(note):
+    try:
+        return enharmonic_notes[note]
+    except KeyError:
+        return note
 
 def calculateDistance(x1,x2) -> float:
     e = (x1-x2)
     return np.sqrt(e.real**2+e.imag**2)
 
-def transformChroma(chroma):
+def extractNotes(chromavector,key,max_notes=12):
+    # sort notes in ascending order and pick find number of n notes until a certain energy is accumulated
+    notes = [(i,energy) for i,energy in zip(range(12),chromavector)]
+    notes = sorted(notes, key=lambda x: x[1], reverse=True)
+    for n in range(1,13):
+        if sum(x[1] for x in notes[:n]) > 0.95:
+            print(n)
+            break
+    n_k = pitch_classes[key].num_accidentals
+    diatonic_notes = []
+    non_harmonic_notes = []
+    # split n notes into diatonic and non-harmonic notes
+    for pc_index,energy in notes[:n]:
+        n_c = pitch_classes[pc_index].chromatic_index
+        n_f = sym3(49*n_c,84,7*n_k)
+        if checkIndex(n_f,n_k):
+            diatonic_notes.append(pc_index)
+        else:
+            non_harmonic_notes.append(pc_index)
+    return diatonic_notes, non_harmonic_notes
+
+def transformChroma(chroma,alterations=True):
     """explain away
     returns some ndarrays..
     """    
@@ -52,6 +81,8 @@ def transformChroma(chroma):
         # calculte key related circles
         for x in pitch_classes:
             n_k = x.num_accidentals
+            if alterations:
+                n_k_sharp = pitch_classes[(x.pitch_class_index-1)%12].num_accidentals
             key_index = x.pitch_class_index
             # iterate over all chroma bins with correct index
             for pitch_class,chroma_bin in zip(pitch_classes,chroma[time_index,:]):
@@ -70,9 +101,15 @@ def transformChroma(chroma):
                     # diatonic circle   
                     n_dr = sym(n_f-7*n_k,12)
                     rho_DR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*(n_dr/12))
+                    continue
+                if alterations:
+                    # project altered notes in the circle of thirds
+                    n_f_sharp = sym3(49*pitch_class.chromatic_index,84,7*n_k_sharp)
+                    n_tr_sharp = sym(n_f_sharp-7*n_k-12,24)
+                    rho_TR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*((n_tr_sharp)/24))
     return (rho_F,rho_FR,rho_TR,rho_DR)
 
-def createChordTemplates(type="triads"):
+def createChordTemplates(type="triads",root_only=False):
     notes = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
     major = mir_eval.chord.quality_to_bitmap("maj")
     minor = mir_eval.chord.quality_to_bitmap("min")
@@ -87,46 +124,27 @@ def createChordTemplates(type="triads"):
         V = np.roll(major,i+7)
         VI = np.roll(minor,i+9)
         VII = np.roll(dim,i+11)
-        labels.append([f"{notes[i]}:maj",f"{notes[(i+2)%12]}:min",f"{notes[(i+4)%12]}:min",
-                    f"{notes[(i+5)%12]}:maj",f"{notes[(i+7)%12]}:maj",f"{notes[(i+9)%12]}:min",f"{notes[(i+11)%12]}:dim"])
+        if root_only:
+            labels.append([notes[i],notes[(i+2)%12],notes[(i+4)%12],
+                    notes[(i+5)%12],notes[(i+7)%12],notes[(i+9)%12],notes[(i+11)%12]])
+        else:
+            labels.append([f"{notes[i]}:maj",f"{notes[(i+2)%12]}:min",f"{notes[(i+4)%12]}:min",
+                        f"{notes[(i+5)%12]}:maj",f"{notes[(i+7)%12]}:maj",f"{notes[(i+9)%12]}:min",f"{notes[(i+11)%12]}:dim"])
         chroma = np.array([I,II,III,IV,V,VI,VII],dtype=float)
         max_val = np.sum(chroma, axis=1)
         templates[i,:,:] = chroma / (np.expand_dims(max_val, axis=1)+np.finfo(float).eps)
     return (templates,labels)
 
-def createKeyTemplate():
-    template = np.array([1, 0, 0, 0, 0, 0.75, 0, 0.75, 0, 0, 0, 0])  # put emphasis on tonic key
-    matrix = np.zeros((12,12),dtype=float)
-    for i in range(12):
-        matrix[i,:] = np.roll(template,i)
-    return matrix
-
-def getNumberOfNotesInKey(chroma,threshold=0.1):
-    if chroma.ndim == 1:
-        chroma = np.reshape(chroma, (1, 12))
-    elif chroma.shape[1] != 12:
-        raise ValueError("Array shape must be (X, 12).")
-    key_templates = createKeyTemplate()
-    notes_in_key = np.zeros_like(chroma,dtype=int)
-    for time_index in range(chroma.shape[0]):
-        # calculte key related circles
-        for x in pitch_classes:
-            n_k = x.num_accidentals
-            # iterate over all chroma bins with correct index
-            for pitch_class,chroma_bin in zip(pitch_classes,chroma[time_index,:]):
-                n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
-                # check if real pitch is part of the key n_k
-                if checkIndex(n_f,n_k) and chroma_bin > threshold:
-                    notes_in_key[time_index,x.pitch_class_index] += 1
-    
-    return notes_in_key
-
-def estimateKey(chroma,threshold=0.1):
-    correlation = np.matmul(getNumberOfNotesInKey(chroma,threshold=0.1),createKeyTemplate())
-    key_index = np.argmax(correlation,axis=1)
-    if len(key_index) == 1:
-        key_index = key_index[0]
-    return key_index
+def estimateKey(chroma,alpha=0.9,threshold=0.7,angle_weight=0.6):
+    """estimate key by lowpass filtering of pitch class energy"""
+    pc_energy = getPitchClassEnergyProfile(chroma,threshold=threshold,angle_weight=angle_weight)
+    pc_energy_filtered = np.zeros_like(pc_energy)
+    pc_energy_filtered[0,:] = pc_energy[0,:] 
+    for i in range(1,pc_energy.shape[0]):
+        pc_energy_filtered[i,:] = alpha * pc_energy_filtered[i-1,:] + (1-alpha) * pc_energy[i,:]
+    keys = np.argsort(pc_energy_filtered,axis=1)
+    #key = np.argmax(pc_energy_filtered,axis=1)
+    return keys
 
 def transcribeChromagram(t_chroma, chroma, postprocessing = False):
     def postprocessing(chroma, est_intervals, est_labels):
@@ -188,17 +206,18 @@ def transcribeChromagram(t_chroma, chroma, postprocessing = False):
         est_intervals,est_labels = postprocessing(chroma,est_intervals,est_labels)
     return est_intervals,est_labels
     
-def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.7):
+def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.5):
     """
     divide each chroma bin energy by the total chroma energy and apply thresholding of 90% by default
-       angle weighting puts more emphasis on tonic of a pitch class. 
+       angle weighting puts more emphasis on tonic of a pitch class (O .. 1). 
        This is necessary because a C-Major chord is present in pitch classes C,F and G
     """
     angle_weighting = lambda x : -((1-angle_weight)/np.pi) * np.abs(x) + 1
     pitch_class_energy = np.zeros_like(chroma)
 
     chroma_energy = np.square(chroma)
-    total_energy = np.reshape(np.repeat(np.sum(chroma_energy,axis=1),12),chroma.shape)
+    total_energy = np.expand_dims(np.sum(chroma_energy,axis=1),axis=1)
+
     for pitch_class in pitch_classes:
         for chroma_bin in range(12):
                 # iterate all chromatic indices for every pitch class and check if pitch class is present in this key
@@ -210,8 +229,9 @@ def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.7):
                     pitch_class_energy[:,pitch_class.pitch_class_index] += angle_weighting(angle) * chroma_energy[:,chroma_bin]
 
     # apply tresholding for pitchclasses with low relative energy
-    pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0            
-    pitch_class_energy = np.multiply(pitch_class_energy,1/(total_energy+np.finfo(float).eps))
+    pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0      
+
+    pitch_class_energy = pitch_class_energy / (np.expand_dims(np.sum(pitch_class_energy,axis=1),axis=1)+np.finfo(float).eps)
     return pitch_class_energy
 
 def scaleVector(x,y,alpha):
@@ -254,26 +274,26 @@ def sym3(n,g,n0):
     else:
         return None
 
-def drawLabel(axis,z,note_label,radius = 1.2,fontsize=7):
+def drawLabel(axis,z,note_label,radius = 1.25,fontsize=7,tex=True):
     x,y= scaleVector(z.real,z.imag,radius)
-    axis.text(x,y,note_label,rotation=np.arctan2(y,x)*180/np.pi-90,
+    axis.text(x,y,utils.formatChordLabel(note_label),rotation=np.arctan2(y,x)*180/np.pi-90,
               fontsize=fontsize,horizontalalignment='center',verticalalignment='center')
 
+
 def plotHalftoneGrid(axis,n_ht):
-    axis.plot([-1,1], [0,0], color='grey',linestyle=(0,(5,10)),linewidth=1)
-    axis.plot([0,0], [-1,1], color='grey',linestyle=(0,(5,10)),linewidth=1)
+    # axis.plot([-1,1], [0,0], color='grey',linestyle=(0,(5,10)),linewidth=1)
+    # axis.plot([0,0], [-1,1], color='grey',linestyle=(0,(5,10)),linewidth=1)
     x = np.linspace(0,n_ht,n_ht+1)
     for i in x:
         ht = np.exp(-1j*2*np.pi*(i/n_ht))*1j
         axis.plot(ht.real,ht.imag,'o',color='grey',markersize=1.5)
 
-def plotVector(axis,z,rotation=np.pi/2,**kwargs):
+def plotVector(axis,z,norm=False,**kwargs):
     # rotate for CPS plots
     z = z*1j
+    if norm:
+        z = np.exp(1j*np.angle(z))
     axis.arrow(0,0,z.real,z.imag,**kwargs)
-    axis.set_xlim((-1,1))
-    axis.set_ylim((-1,1))
-    axis.set_axis_off()
 
 def calculateVectorsFR(pitch_class_index=0):
     n_k = pitch_classes[pitch_class_index].num_accidentals
@@ -320,9 +340,12 @@ def plotCircleOfFifthsRelated(ax,pitch_class_index=0):
             drawLabel(ax,rho_FR,pitch_class.name)
     ax.axis('off')
 
-def plotCircleOfThirdsRelated(ax,pitch_class_index=0):
+def plotCircleOfThirdsRelated(ax,pitch_class_index=0,alterations=True):
     plotHalftoneGrid(ax,24)
     n_k = pitch_classes[pitch_class_index].num_accidentals
+    if alterations:
+        n_k_sharp = pitch_classes[(pitch_class_index-1)%12].num_accidentals
+
     ax.text(-1.1,1.2,f"TR({pitch_classes[pitch_class_index].name})",fontsize=8,
               horizontalalignment='center',verticalalignment='center')
     for pitch_class in pitch_classes:
@@ -333,6 +356,12 @@ def plotCircleOfThirdsRelated(ax,pitch_class_index=0):
             rho_TR = np.exp(-1j*2*np.pi*((n_tr)/24))*1j
             ax.plot(rho_TR.real,rho_TR.imag,'ok',markersize=3)
             drawLabel(ax,rho_TR,pitch_class.name)
+            continue
+        if alterations:
+            n_f_sharp = sym3(49*pitch_class.chromatic_index,84,7*n_k_sharp)
+            n_tr_sharp = sym(n_f_sharp-7*n_k-12,24)
+            r_tr_sharp = np.exp(-1j*2*np.pi*((n_tr_sharp)/24))*1j
+            drawLabel(ax,r_tr_sharp,pitch_class.name)
     ax.axis('off')
 
 def plotCircleOfDiatonicRelated(ax,pitch_class_index=0):
@@ -484,6 +513,8 @@ def plotDiatonicTriads(ax,pitch_class_index=0,tonality="major"):
     plotCircleOfDiatonicRelated(ax[2],n_k)  
 
     _,r_FR,r_TR,r_DR = transformChroma(chords) 
+
+
     for i in range(len(chords)):
         # rotate vector for plot
         z = r_FR[i, n_k] * 1j
@@ -534,7 +565,7 @@ def plotDiatonicTetrads(pitch_class_index=0,tonality="major"):
     plotCircleOfThirdsRelated(ax[2],n_k)
     plotCircleOfDiatonicRelated(ax[3],n_k)  
 
-    r_F,r_FR,r_TR,r_DR = transformChroma(chords) 
+    r_F,r_FR,r_TR,r_DR = transformChroma(chords,enharmonic=True) 
     for i in range(len(chords)):
         # rotate vector for plot
         z = r_F[i] * 1j
@@ -561,9 +592,7 @@ def plotDiatonicTetrads(pitch_class_index=0,tonality="major"):
 
 if __name__=="__main__":
     fig,ax = plt.subplots(3,4,figsize=(11,9))
-    plotDiatonicTriads(ax[0,:],0,"major")
-    plotDiatonicTriads(ax[1,:],9,"minor")
-    plotDiatonicTriads(ax[2,:],9,"harmonic minor")
-    fig.tight_layout()
-    plt.savefig("chords_cps.png")
+    plotCircleOfThirdsRelated(ax[0,0],1)
+    plotCircleOfThirdsRelated(ax[0,1],0)
+    plotCircleOfThirdsRelated(ax[0,2],11)
     plt.show()
