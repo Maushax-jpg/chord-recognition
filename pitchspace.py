@@ -86,3 +86,52 @@ def transformChroma(chroma,alterations=False):
                     n_tr_sharp = sym(n_f_sharp-7*n_k-12,24)
                     rho_TR[time_index,key_index] += chroma_bin*np.exp(-1j*2*np.pi*((n_tr_sharp)/24))
     return (rho_F,rho_FR,rho_TR,rho_DR)
+
+def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.5):
+    """
+    divides each chroma bin energy by the total chroma energy and applies an energy threshold afterwards.
+    angle weighting puts more emphasis on tonic of a pitch class (O .. 1). 
+    This is necessary because a C-Major chord is present in pitch classes C,F and G
+    returns the pitch_class energies for each timestep
+    """
+    if chroma.ndim == 1:
+        chroma = np.reshape(chroma, (1, 12))
+    elif chroma.shape[1] != 12:
+        raise ValueError("Array shape must be (X, 12).")
+    
+    angle_weighting = lambda x : -((1-angle_weight)/np.pi) * np.abs(x) + 1
+    pitch_class_energy = np.zeros_like(chroma)
+
+    chroma_energy = np.square(chroma)
+    total_energy = np.expand_dims(np.sum(chroma_energy,axis=1),axis=1)
+
+    for pitch_class in pitch_classes:
+        for chroma_bin in range(12):
+                # iterate all chromatic indices for every pitch class and check if pitch class is present in this key
+                n_c = pitch_classes[chroma_bin].chromatic_index
+                n_f = sym3(49*n_c,84,7*pitch_class.num_accidentals)
+                if -21 <= (n_f-7*pitch_class.num_accidentals) <= 21:
+                    n_tr = sym(n_f-7*pitch_class.num_accidentals-12,24)
+                    angle = np.angle(np.exp(-1j*2*np.pi*(n_tr/24)))
+                    pitch_class_energy[:,pitch_class.pitch_class_index] += angle_weighting(angle) * chroma_energy[:,chroma_bin]
+
+    # apply tresholding for pitchclasses with low relative energy
+    pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0      
+
+    pitch_class_energy = pitch_class_energy / (np.expand_dims(np.sum(pitch_class_energy,axis=1),axis=1)+np.finfo(float).eps)
+    return pitch_class_energy
+
+def filterPitchClassEnergy(pc_energy, alpha=0.95):
+    if pc_energy.shape[1] != 12:
+        raise ValueError("Array shape must be (X, 12).")
+    
+    pc_energy_filtered = np.zeros_like(pc_energy)
+    pc_energy_filtered[0,:] = pc_energy[0,:] 
+    for i in range(1,pc_energy.shape[0]):
+        pc_energy_filtered[i,:] = alpha * pc_energy_filtered[i-1,:] + (1-alpha) * pc_energy[i,:]
+    return pc_energy_filtered
+
+def estimateKey(pc_energy):
+    """estimate key by lowpass filtering of pitch class energy"""
+    keys = np.argmax(pc_energy,axis=1)
+    return keys
