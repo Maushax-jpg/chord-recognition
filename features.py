@@ -1,6 +1,16 @@
 import numpy as np
+import librosa
+import madmom
+from scipy.fftpack import dct,idct
 
-
+def madmom_beats(audiopath,beats_per_bar=2):
+    beat_processor = madmom.features.downbeats.DBNDownBeatTrackingProcessor(beats_per_bar,fps=100)
+    activation_processor =  madmom.features.downbeats.RNNDownBeatProcessor()
+    activations = activation_processor(audiopath)
+    beats = beat_processor(activations)
+    downbeats = [beat[0] for beat in beats if beat[1] == 1]
+    upbeats = [beat[0] for beat in beats if beat[1] == 2]
+    return downbeats,upbeats
 
 def sumChromaDifferences(chroma):
     if chroma.shape[1] != 12:
@@ -50,9 +60,14 @@ def nonSparseness(chroma):
 def flatness(chroma):
     if chroma.shape[1] != 12:
         raise ValueError("invalid Chromagram shape!")
-    geometric_mean = np.product(chroma,axis=1)**(1/12)
+    geometric_mean = np.product(chroma + np.finfo(float).eps, axis=1)**(1/12)
     arithmetic_mean = np.sum(chroma,axis=1) / 12 + np.finfo(float).eps
     return geometric_mean/arithmetic_mean
+
+def standardDeviation(chroma):
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    return np.std(chroma,axis=1)
 
 def angularDeviation(chroma):
     if chroma.shape[1] != 12:
@@ -75,3 +90,37 @@ def intervalCategories(chroma):
         for q in range(12):
             interval_features[:,i] += chroma[:,q] * chroma[:,(q+i+1)%12]
     return interval_features
+
+def crpChroma(y, fs=22050, nCRP=22,midinote_start=12,midinote_stop=120):
+    """Chroma DCT-Reduced Log Pitch"""
+    bins_per_octave = 36
+    octaves = 8
+    hop_length = 1024
+    estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
+    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),
+                        bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves, sr=fs, tuning=estimated_tuning,gamma=0))
+
+    # pick every third coefficient from oversampled cqt
+    pitchgram_cqt = np.finfo(float).eps * np.ones((midinote_stop,C.shape[1])) 
+    for note in range(midinote_start,midinote_stop):
+        try:
+            pitchgram_cqt[note,:] = C[(note-midinote_start)*3,:]
+        except IndexError:
+            break
+    v = pitchgram_cqt ** 2
+
+    vLog = np.log(100 * v + 1);  
+    vLogDCT = dct(vLog, norm='ortho', axis=0);  
+    vLogDCT[:nCRP,:] = 0  # liftering hochpass
+    vLogDCT[nCRP,:] = 0.5 * vLogDCT[nCRP,:]
+
+    vLog_lift = idct(vLogDCT, norm='ortho', axis=0)
+    vLift = 1/100 * (np.exp(vLog_lift)-1); 
+    crp = vLift.reshape(10,12,-1)
+    crp = np.maximum(0, np.sum(crp, axis=0))
+    crp = crp / (np.sum(crp,axis=0)+np.finfo(float).eps)
+    t = np.linspace(hop_length/fs,y.shape[0]/fs,crp.shape[1])
+    return t,crp.T  # transpose it so it matches the other chroma types 
+
+if __name__ == "__main__":
+    pass
