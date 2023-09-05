@@ -16,7 +16,7 @@ def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None):
     return img
 
 def getColor(chordlabel):
-    colors = ["blue","lightblue", "green", "red", "orange", "purple", "grey", "black","brown", "magenta", "teal","cyan"]
+    colors = ["blue","lightblue", "green", "red", "orange", "purple", "grey", "lightgreen","brown", "magenta", "teal","cyan"]
     root,_,_ = mir_eval.chord.encode(chordlabel)
     return colors[root]
 
@@ -39,7 +39,6 @@ def formatChordLabel(chordlabel):
 
 def plotChordAnnotations(ax,annotations,time_interval=(0,10),format_label=False):
     ref_intervals, ref_labels = annotations
-    colors = ["red", "green", "blue", "yellow", "orange", "purple", "pink", "cyan", "brown", "magenta", "teal", "gray"]
     for i,label in enumerate(ref_labels):
         # skip labels that do not overlap time interval 
         if ref_intervals[i,1] < time_interval[0] or ref_intervals[i,0] > time_interval[1]:
@@ -56,7 +55,17 @@ def plotChordAnnotations(ax,annotations,time_interval=(0,10),format_label=False)
     ax.set_ylim(0,2)
     ax.axis("off")
     ax.set_xlim(time_interval)
-    
+
+def plotIntervalCategories(ax,t,interval_categories,ax_colorbar=None):
+    img = librosa.display.specshow(interval_categories.T,x_coords=t.T,x_axis='time', cmap="Reds", ax=ax, vmin=0, vmax=0.3)
+    ax.set_yticks(np.arange(6))
+    ax.set_yticklabels(["IC1","IC2","IC3","IC4","IC5","IC6"]);
+    ax.set_xlim(t[0],t[-1])
+    ax.set_xticklabels([])
+    if ax_colorbar is not None:
+        fig = plt.get_current_fig_manager()
+        fig.colorbar(img,cax=ax,cmap="Reds")
+
 def plotComplexityFeatures(ax,ax_label,t,features):
     colors = ["blue", "green", "red", "orange", "purple", "grey","brown", "black"]
     ax.plot(t, features[0],color=colors[0])
