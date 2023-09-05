@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import matplotlib
 import librosa.display
 import mir_eval
+import itertools
+import numpy as np
 
 def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None):
     img = librosa.display.specshow(chroma.T,x_coords=t.T,x_axis='time', y_axis='chroma', cmap="Reds", ax=ax, vmin=0, vmax=0.5)
@@ -14,7 +16,7 @@ def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None):
     return img
 
 def getColor(chordlabel):
-    colors = ["red", "green", "lightblue", "yellow", "orange", "purple", "pink", "cyan", "brown", "magenta", "teal", "gray","white"]
+    colors = ["blue","lightblue", "green", "red", "orange", "purple", "grey", "black","brown", "magenta", "teal","cyan"]
     root,_,_ = mir_eval.chord.encode(chordlabel)
     return colors[root]
 
@@ -34,6 +36,7 @@ def formatChordLabel(chordlabel):
     else:
         return f"${root}{quality}$"
     
+
 def plotChordAnnotations(ax,annotations,time_interval=(0,10),format_label=False):
     ref_intervals, ref_labels = annotations
     colors = ["red", "green", "blue", "yellow", "orange", "purple", "pink", "cyan", "brown", "magenta", "teal", "gray"]
@@ -72,3 +75,20 @@ def plotComplexityFeatures(ax,ax_label,t,features):
     legend = ax_label.legend(legend_handles, labels, loc='center left', bbox_to_anchor=(0, 0.5), title='complexity features', handlelength=1, handletextpad=0.5, fontsize=8, title_fontsize=10, facecolor='lightgray', framealpha=0.8)
     ax_label.add_artist(legend)
     ax_label.set_axis_off()
+
+def createChordIntervals(t,labels):
+    est_labels = []
+    est_intervals = []
+    t_start = t[0]
+    for time,label in zip(itertools.pairwise(t),itertools.pairwise(labels)):
+        if(label[0] != label[1]): # chord change
+            est_intervals.append([t_start,time[1]])
+            est_labels.append(label[0])
+            t_start = time[1]
+        else: # no chord change
+            continue
+    est_intervals.append([t_start,time[1]])
+    est_labels.append(label[1])
+    return np.array(est_intervals),est_labels
+
+
