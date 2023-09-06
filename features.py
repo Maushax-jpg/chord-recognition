@@ -3,6 +3,10 @@ import librosa
 import madmom
 from scipy.fftpack import dct,idct
 
+def rms(y,hop_length=1024):
+    """compute RMS value from mono audio signal"""
+    return librosa.feature.rms(y=y,hop_length=hop_length//2).flatten()
+
 def madmom_beats(audiopath,beats_per_bar=2):
     beat_processor = madmom.features.downbeats.DBNDownBeatTrackingProcessor(beats_per_bar,fps=100)
     activation_processor =  madmom.features.downbeats.RNNDownBeatProcessor()
@@ -44,10 +48,8 @@ def negativeSlope(chroma):
 def shannonEntropy(chroma):
     """calculates the Shannon entropy of a chromagram for every timestep. The chromavector is treated as a random variable."""
     if chroma.shape[1] != 12:
-        ax = 0
-    else:
-        ax = 1
-    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=ax)/np.log2(12)
+        raise ValueError("invalid Chromagram shape!")
+    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=1)/np.log2(12)
 
 def nonSparseness(chroma):
     if chroma.shape[1] != 12:
@@ -90,6 +92,13 @@ def intervalCategories(chroma):
         for q in range(12):
             interval_features[:,i] += chroma[:,q] * chroma[:,(q+i+1)%12]
     return interval_features
+
+def cqt(y,fs=22050, hop_length=1024, midi_min=12, octaves=8,bins_per_octave=36):
+    estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
+    cqt = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midi_min),
+                        bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves, sr=fs, tuning=estimated_tuning,gamma=0))
+    time_vector = np.linspace(hop_length/fs,y.shape[0]/fs,cqt.shape[1])
+    return time_vector, cqt
 
 def crpChroma(y, fs=22050, nCRP=22,midinote_start=12,midinote_stop=120):
     """Chroma DCT-Reduced Log Pitch"""
