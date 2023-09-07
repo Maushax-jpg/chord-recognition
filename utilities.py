@@ -13,6 +13,8 @@ def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None):
     if upbeats is not None:
         upbeats = [beat for beat in upbeats if t[0] <= beat <= t[-1]]
         ax.vlines(upbeats,-0.5,11.5,'k',linestyles='dashed',alpha=0.2)
+
+    ax.set_xlabel("Time in s")
     return img
 
 def getColor(chordlabel):

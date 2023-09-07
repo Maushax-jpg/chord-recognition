@@ -88,9 +88,11 @@ def intervalCategories(chroma):
     if chroma.shape[1] != 12:
         raise ValueError("invalid Chromagram shape!")
     interval_features = np.zeros((chroma.shape[0],6),dtype=float)
+
     for i in range(6):
-        for q in range(12):
-            interval_features[:,i] += chroma[:,q] * chroma[:,(q+i+1)%12]
+        rotated_chroma = np.roll(chroma, shift=i+1, axis=1)
+        interval_features[:, i] = np.sum(chroma * rotated_chroma, axis=1)
+        
     return interval_features
 
 def cqt(y,fs=22050, hop_length=1024, midi_min=12, octaves=8,bins_per_octave=36):
