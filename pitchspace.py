@@ -118,29 +118,41 @@ def getPitchClassEnergyProfile(chroma,threshold=0.6,angle_weight=0.5):
     total_energy = np.expand_dims(np.sum(chroma_energy,axis=1),axis=1)
 
     for pitch_class in pitch_classes:
+        # iterate all chromatic indices for every pitch class and check if pitch class is present in this key
+        r_tr = 0+0j
         for chroma_bin in range(12):
-                # iterate all chromatic indices for every pitch class and check if pitch class is present in this key
                 n_c = pitch_classes[chroma_bin].chromatic_index
                 n_f = sym3(49*n_c,84,7*pitch_class.num_accidentals)
                 if -21 <= (n_f-7*pitch_class.num_accidentals) <= 21:
                     n_tr = sym(n_f-7*pitch_class.num_accidentals-12,24)
-                    angle = np.angle(np.exp(-1j*2*np.pi*(n_tr/24)))
-                    pitch_class_energy[:,pitch_class.pitch_class_index] += angle_weighting(angle) * chroma_energy[:,chroma_bin]
-
+                    r_tr += np.exp(-1j*2*np.pi*(n_tr/24))
+                    # accumulate chroma energy
+                    pitch_class_energy[:,pitch_class.pitch_class_index] += chroma_energy[:,chroma_bin]
+        # apply angle weighting
+        pitch_class_energy[:,pitch_class.pitch_class_index] = pitch_class_energy[:,pitch_class.pitch_class_index] * angle_weighting(np.angle(r_tr))
     # apply tresholding for pitchclasses with low relative energy
     pitch_class_energy[pitch_class_energy < threshold * total_energy] = 0      
 
     pitch_class_energy = pitch_class_energy / (np.expand_dims(np.sum(pitch_class_energy,axis=1),axis=1)+np.finfo(float).eps)
     return pitch_class_energy
 
-def filterPitchClassEnergy(pc_energy, alpha=0.95):
+def filterPitchClassEnergy(pc_energy,fifth_width=None,rms=None, alpha=0.95):
     if pc_energy.shape[1] != 12:
         raise ValueError("Array shape must be (X, 12).")
-    
+    if fifth_width is not None and rms is not None:
+        # dampen values with a high fifth width
+        alpha_vector = np.ones_like(fifth_width) * 0.99
+        index = fifth_width > 0.66
+        if index.any():
+            alpha_vector[index] = 1
+        index = rms < 0.01
+        if index.any():
+            alpha_vector[index] = 0
     pc_energy_filtered = np.zeros_like(pc_energy)
     pc_energy_filtered[0,:] = pc_energy[0,:] 
     for i in range(1,pc_energy.shape[0]):
-        pc_energy_filtered[i,:] = alpha * pc_energy_filtered[i-1,:] + (1-alpha) * pc_energy[i,:]
+        pc_energy_filtered[i,:] = alpha_vector[i] * pc_energy_filtered[i-1,:] + (1-alpha_vector[i]) * pc_energy[i,:]
+
     return pc_energy_filtered
 
 def estimateKey(pc_energy):
