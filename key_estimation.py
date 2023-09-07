@@ -18,8 +18,8 @@ start = 0
 stop = 10
 path = "/home/max/ET-TI/Masterarbeit/mirdata/beatles/"
 # title = "06_-_Rubber_Soul/11_-_In_My_Life"
-title = "12_-_Let_It_Be/06_-_Let_It_Be"
-# title = "10CD1_-_The_Beatles/CD1_-_17_-_Julia"
+# title = "12_-_Let_It_Be/06_-_Let_It_Be"
+title = "10CD1_-_The_Beatles/CD1_-_17_-_Julia"
 audiopath = f"{path}/audio/{title}.wav"
 
 # the exception handling is necessary due to a weird bug, if i try to load it the first time it doesnt work!
@@ -65,15 +65,45 @@ if False:
         plt.savefig(basepath+"/"+name)
     plt.show()
 
-# other approach 
+# other approach to calculate correlation with major key profiles (krumhansl)
 templates = np.zeros((12,12),dtype=float)
-pitch_class_index = [0,2,4,5,7,9,11]
+key_profile = np.array([5, 2, 3.5, 2, 4.5, 4, 2, 4.5, 2, 3.5, 1.5, 4])/12 # (12,)
+# key_profile = key_profile / np.sum(key_profile)
 for i in range(12):
-    index = [(pc_index + i) % 12 for pc_index in pitch_class_index]
-    templates[i,index] = 1.0
-fig,ax = plt.subplots()
-ax.imshow(templates.T,origin='lower',aspect='auto')
+    templates[i,:] = np.roll(key_profile,i)
+correlation = np.matmul(templates,chroma.T).T # chroma shape (t,12)
+
+# computation of interval categories
+key_profile = [0,2,4,5,7,9,11]
+key_template = np.zeros_like(chroma)
+key_template[:, key_profile] = 1.0
+# precompute interval_categories for all keys
+interval_categories = np.zeros((12,chroma.shape[0],6))
+ic_energy = np.zeros_like(chroma)
+ic_categories = np.array([2,3,4])
+for pitch_class in range(12):
+    key_related_chroma = np.multiply(chroma,np.roll(key_template,pitch_class))
+    interval_categories[pitch_class,:,:] = features.intervalCategories(key_related_chroma)
+    ic_energy[:,pitch_class] = np.sum(interval_categories[pitch_class,:,:], axis=1)  # sum energy of m3/M6,M3/m6,P4/P5  
+
+# we can savely discard 6 keys with lowest correlation as they are far away from the real key on the circle of fifths!
+row_indices = np.arange(correlation.shape[0])[:,np.newaxis]
+
+# key_candidates = np.argsort(correlation,axis=1)[:,:6] # pick the 6 lowest correlation indices
+# correlation[row_indices, key_candidates] = 0 # set the correlation to zero
+key_candidates_corr = np.argsort(correlation,axis=1)[:,-3:] 
+key_candidates_ic = np.argsort(ic_energy,axis=1)[:,-3:] 
+
+
+fig,ax = plt.subplots(4,1,height_ratios=(1,3,3,2),figsize=(9,5))
+utilities.plotChordAnnotations(ax[0],target,(start,stop))
+utilities.plotChromagram(ax[1],t,chroma)
+utilities.plotChromagram(ax[2],t,correlation)
+utilities.plotChromagram(ax[3],t,ic_energy)
+ax[1].plot(t,key_candidates_corr,'xg',markersize=1)
+ax[1].plot(t,key_candidates_ic,'xb',markersize=1)
 plt.show()
+
 # r_F,_,_,_ = pitchspace.transformChroma(chroma)
 # keys = np.argsort(pc_energy,axis=1)[:,-3:]
 
