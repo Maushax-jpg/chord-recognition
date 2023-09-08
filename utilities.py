@@ -5,8 +5,8 @@ import mir_eval
 import itertools
 import numpy as np
 
-def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None):
-    img = librosa.display.specshow(chroma.T,x_coords=t.T,x_axis='time', y_axis='chroma', cmap="Reds", ax=ax, vmin=0, vmax=0.5)
+def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmax=0.5):
+    img = librosa.display.specshow(chroma.T,x_coords=t.T,x_axis='time', y_axis='chroma', cmap="Reds", ax=ax, vmin=0, vmax=vmax)
     if downbeats is not None:
         downbeats = [beat for beat in downbeats if t[0] <= beat <= t[-1]]
         ax.vlines(downbeats,-0.5,11.5,'k',linestyles='dashed',alpha=0.6)
@@ -18,7 +18,7 @@ def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None):
     return img
 
 def getColor(chordlabel):
-    colors = ["blue","lightblue", "green", "red", "orange", "purple", "grey", "lightgreen","brown", "magenta", "teal","cyan"]
+    colors = ["lightblue","blue", "green", "red", "orange", "purple", "grey", "lightgreen","brown", "magenta", "teal","cyan"]
     root,_,_ = mir_eval.chord.encode(chordlabel)
     return colors[root]
 
@@ -102,4 +102,17 @@ def createChordIntervals(t,labels):
     est_labels.append(label[1])
     return np.array(est_intervals),est_labels
 
-
+def chordTemplates(template_type="triads",noise=0):
+    if template_type == "triads": # major, minor, augmented, diminished, suspended
+        templates = np.zeros((6,12),dtype=float)
+        labels = ["C","C:min","C:aug","C:dim","C:sus2","C:sus4"]
+        for i,quality in enumerate(["maj","min","aug","dim","sus2","sus4"]):
+            templates[i,:] = mir_eval.chord.quality_to_bitmap(quality) / 3
+        return templates,labels
+    elif template_type == "tetrads":
+        templates = np.zeros((8,12),dtype=float)
+        labels = ["C:7","C:maj7","C:min7","C:minmaj7","C:maj6","C:min6","C:dim7","C:hdim7"]
+        for i,quality in enumerate(["7","maj7","min7","minmaj7","maj6","min6","dim7","hdim7"]):
+            templates[i,:] = mir_eval.chord.quality_to_bitmap(quality) / 4
+        return templates,labels
+    
