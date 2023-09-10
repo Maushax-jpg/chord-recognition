@@ -3,6 +3,7 @@ import numpy as np
 import mir_eval
 import matplotlib
 import utilities
+import features
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 
@@ -155,9 +156,39 @@ def filterPitchClassEnergy(pc_energy,fifth_width=None,rms=None, alpha=0.95):
 
     return pc_energy_filtered
 
-def estimateKey(pc_energy):
-    """estimate key by lowpass filtering of pitch class energy"""
-    keys = np.argmax(pc_energy,axis=1)
+def estimateKeys(chroma,ic_threshold=0.01):
+    # other approach to calculate correlation with major key profiles (krumhansl)
+    templates = np.zeros((12,12),dtype=float)
+    key_profile = np.array([5, 2, 3.5, 2, 4.5, 4, 2, 4.5, 2, 3.5, 1.5, 4])/12 # (12,) arbitrary normation for plots
+    # key_profile = key_profile / np.sum(key_profile)
+    for i in range(12):
+        templates[i,:] = np.roll(key_profile,i)
+    correlation = np.matmul(templates,chroma.T).T # chroma shape (t,12)
+
+    # computation of interval categories
+    key_profile = [0,2,4,5,7,9,11]
+    key_template = np.zeros_like(chroma)
+    key_template[:, key_profile] = 1.0
+    # precompute interval_categories for all keys
+    interval_categories = np.zeros((12,chroma.shape[0],6))
+    ic_energy = np.zeros_like(chroma)
+    for pitch_class in range(12):
+        key_related_chroma = np.multiply(chroma,np.roll(key_template,pitch_class))
+        interval_categories[pitch_class,:,:] = features.intervalCategories(key_related_chroma)
+        ic_energy[:,pitch_class] = np.sum(interval_categories[pitch_class,:,2:5], axis=1)  # sum energy of m3/M6,M3/m6,P4/P5  
+
+    # we can savely discard some keys with low correlation (6 or 8?)
+    correlation_energy = np.square(correlation)
+    key_candidates = np.argsort(correlation_energy,axis=1)[:,-3:]
+
+    keys = []
+    for i in range(key_candidates.shape[0]): # for all timesteps
+        candidates = []
+        for n in range(3): # 3 candidates
+            ic = interval_categories[key_candidates[i,n],i,:]
+            if ic[2] > ic_threshold and ic[3] > ic_threshold and ic[4] > ic_threshold:
+               candidates.append(key_candidates[i,n])
+        keys.append(candidates) 
     return keys
 
 def createChordTemplates():
