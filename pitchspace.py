@@ -4,6 +4,7 @@ import mir_eval
 import matplotlib
 import utilities
 import features
+import itertools
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 
@@ -219,6 +220,59 @@ def createChordTemplates():
         max_val = np.sum(chroma, axis=1)
         templates[i,:,:] = chroma / (np.expand_dims(max_val, axis=1)+np.finfo(float).eps)
     return (templates,labels)
+
+def predictLabels(t,chroma,key_candidates):
+
+    # up to three chord labels can be estimated
+    # calculate angles of triad prototypes for chord estimation
+    templates, labels = createChordTemplates()
+    dphi_FR = np.zeros((7,))
+    dphi_TR = np.zeros((7,))
+    # only the template chord of the key c-major is used (pitch_class index=0)
+    x_F, x_FR, x_TR, x_DR = transformChroma(templates[0,:,:])
+    _, rho_FR, rho_TR, _  = transformChroma(chroma)
+    chord_candidates = [] # estimated chord lables
+
+    for time_index in range(chroma.shape[0]):
+        temp_chord_candidates =  [None,None,None]
+        for i,key in enumerate(key_candidates[time_index]):
+            # extract feature in the estimated key for the current timestep
+            r_FR = rho_FR[time_index, key]
+            r_TR = rho_TR[time_index, key]
+            # compute the angle difference for all template chords
+            for template in range(7):
+                # compute angle difference
+                dphi_FR[template] = angle_between(r_FR,x_FR[template,0])
+                dphi_TR[template] = angle_between(r_TR,x_TR[template,0])
+            # pick the chordprototype with the minimum distance 
+            d = np.argmin(dphi_FR+dphi_TR)
+            # access the correct label for the current key and chordprototype
+            temp_chord_candidates[i] = labels[key][d]
+        chord_candidates.append(temp_chord_candidates)
+
+    # Up to 3 candidates are treated separately from now on, we create intervals for them
+    est_labels = []  # a nested list holding all estimated chord labels for 3 candidates
+    est_intervals = [] # a nested list holding all intervals for the 3 candidates
+    t_start = t[0]
+    # iterate over all candidates
+    for i in range(3):
+        candidate_labels = []
+        candidate_intervals = []
+        # pairwise iteration for all timestep 
+        for time,candidates in zip(itertools.pairwise(t),itertools.pairwise(chord_candidates)):
+            if(candidates[0][i] != candidates[1][i]): # chord change
+                candidate_intervals.append([t_start,time[1]])
+                candidate_labels.append(candidates[0][i] )
+                t_start = time[1]
+            else: # no chord change
+                continue
+        # append last label
+        candidate_intervals.append([t_start,time[1]])
+        candidate_labels.append(candidates[1][i])
+        # add the result to the list of estimations
+        est_intervals.append(np.array(candidate_intervals))
+        est_labels.append(candidate_labels)
+    return est_intervals, est_labels
 
 def estimateChordLabels(t,chroma,pitch_class_index_key):
     """estimate the chord for each timestep in the chromagram by evaluating the angular differences
