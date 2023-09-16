@@ -1,20 +1,26 @@
 import numpy as np
 import librosa
-import madmom
+import madmom.features
 from scipy.fftpack import dct,idct
+from scipy.signal import find_peaks
 
 def rms(y,hop_length=1024):
     """compute RMS value from mono audio signal"""
     return librosa.feature.rms(y=y,hop_length=hop_length//2).flatten()
 
-def madmom_beats(audiopath,beats_per_bar=2):
-    beat_processor = madmom.features.downbeats.DBNDownBeatTrackingProcessor(beats_per_bar,fps=100)
-    activation_processor =  madmom.features.downbeats.RNNDownBeatProcessor()
-    activations = activation_processor(audiopath)
-    beats = beat_processor(activations)
-    downbeats = [beat[0] for beat in beats if beat[1] == 1]
-    upbeats = [beat[0] for beat in beats if beat[1] == 2]
-    return downbeats,upbeats
+def beats(signal,use_beat_processor=True,peak_prominence=0.1):
+    """compute beat-activations from a madmom Signal"""
+    activation_processor =  madmom.features.beats.RNNBeatProcessor() 
+    activations = activation_processor(signal)
+    if use_beat_processor:
+        proc = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)
+        beats = proc(activations) + signal.start 
+    else:
+        peaks, _ = find_peaks(activations,prominence=peak_prominence)
+        beats = [signal.start]
+        beats.extend(signal.start + peaks/100)  # create timestamps for beats (100 frames per seconds)
+        beats.append(signal.stop)
+    return beats
 
 def sumChromaDifferences(chroma):
     if chroma.shape[1] != 12:
@@ -102,14 +108,14 @@ def cqt(y,fs=22050, hop_length=1024, midi_min=12, octaves=8,bins_per_octave=36):
     time_vector = np.linspace(hop_length/fs,y.shape[0]/fs,cqt.shape[1])
     return time_vector, cqt
 
-def crpChroma(y, fs=22050, nCRP=22,midinote_start=12,midinote_stop=120):
-    """Chroma DCT-Reduced Log Pitch"""
+def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,filter_scale=1):
+    """Chroma DCT-Reduced Log Pitch from an madmom signal"""
     bins_per_octave = 36
     octaves = 8
-    hop_length = 1024
+    y = np.array(sig.data)
     estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
-    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),
-                        bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves, sr=fs, tuning=estimated_tuning,gamma=0))
+    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=filter_scale,
+                        bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
 
     # pick every third coefficient from oversampled cqt
     pitchgram_cqt = np.finfo(float).eps * np.ones((midinote_stop,C.shape[1])) 
@@ -130,7 +136,8 @@ def crpChroma(y, fs=22050, nCRP=22,midinote_start=12,midinote_stop=120):
     crp = vLift.reshape(10,12,-1)
     crp = np.maximum(0, np.sum(crp, axis=0))
     crp = crp / (np.sum(crp,axis=0)+np.finfo(float).eps)
-    t = np.linspace(hop_length/fs,y.shape[0]/fs,crp.shape[1])
+    
+    t = np.linspace(sig.start,sig.stop,crp.shape[1])
     return t,crp.T  # transpose it so it matches the other chroma types 
 
 if __name__ == "__main__":

@@ -4,6 +4,13 @@ import librosa.display
 import mir_eval
 import itertools
 import numpy as np
+import madmom
+
+def loadAudio(audiopath,t_start,t_stop,fs=22050):
+    y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
+    sig = madmom.audio.signal.Signal(y, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop)
+    timevector = np.linspace(sig.start,sig.stop,sig.num_samples)
+    return timevector,sig
 
 def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmax=0.5):
     img = librosa.display.specshow(chroma.T,x_coords=t.T,x_axis='time', y_axis='chroma', cmap="Reds", ax=ax, vmin=0, vmax=vmax)
@@ -17,8 +24,25 @@ def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmax=0.5):
     ax.set_xlabel("Time in s")
     return img
 
+def smoothChromagram(t,chroma,beats):
+    chroma_smoothed = np.copy(chroma)
+    for b0,b1 in itertools.pairwise(beats):
+        # median filter
+        try:
+            idx0 = np.argwhere(t >= b0)[0][0]
+        except IndexError:
+            # no matching interval found at array boundaries
+            idx1 = 0
+        try:
+            idx1 = np.argwhere(t >= b1)[0][0]
+        except IndexError:
+            idx1 = t.shape[0]  
+        chroma_mean = np.mean(chroma[idx0:idx1,:],axis=0)
+        chroma_smoothed[idx0:idx1,:] = np.tile(chroma_mean,(idx1-idx0,1))
+    return chroma_smoothed
+
 def getColor(chordlabel):
-    colors = ["lightblue","blue", "green", "red", "orange", "purple", "grey", "lightgreen","brown", "magenta", "teal","cyan"]
+    colors = ["lightblue","blue", "green", "red", "orange", "purple", "grey", "lightgreen","brown", "magenta", "teal","cyan","white"]
     root,_,_ = mir_eval.chord.encode(chordlabel)
     return colors[root]
 
@@ -37,7 +61,15 @@ def formatChordLabel(chordlabel):
         return f"${root}$"
     else:
         return f"${root}{quality}$"
-    
+
+def plotEstimatedKeys(ax,t,est_keys):   
+    """not implemented yet"""
+    # maybe plot similar to chroma? not sure yet 
+    key_matrix = np.zeros((t.shape[0],12),dtype=float)
+    for i,key_candidates in enumerate(est_keys):
+        for n,key in enumerate(key_candidates):
+            key_matrix[i,key[0]] = key[1]
+    plotChromagram(ax,t,key_matrix,vmax=0.2)
 
 def plotChordAnnotations(ax,annotations,time_interval=(0,10),format_label=False):
     ref_intervals, ref_labels = annotations
@@ -53,7 +85,8 @@ def plotChordAnnotations(ax,annotations,time_interval=(0,10),format_label=False)
         ax.add_patch(rect)
         if format_label:
             label = formatChordLabel(label)
-        ax.text(t_start+ (t_stop - t_start)/2, 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=10, color='k')
+        if t_stop - t_start > 0.4:
+            ax.text(t_start+ (t_stop - t_start)/2, 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=10, color='k')
     ax.set_ylim(0,2)
     ax.axis("off")
     ax.set_xlim(time_interval)
