@@ -6,7 +6,7 @@ import itertools
 import numpy as np
 import madmom
 
-def loadAudio(audiopath,t_start,t_stop,fs=22050):
+def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
     y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
     sig = madmom.audio.signal.Signal(y, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop)
     timevector = np.linspace(sig.start,sig.stop,sig.num_samples)
@@ -36,9 +36,10 @@ def smoothChromagram(t,chroma,beats):
         try:
             idx1 = np.argwhere(t >= b1)[0][0]
         except IndexError:
-            idx1 = t.shape[0]  
-        chroma_mean = np.mean(chroma[idx0:idx1,:],axis=0)
-        chroma_smoothed[idx0:idx1,:] = np.tile(chroma_mean,(idx1-idx0,1))
+            idx1 = t.shape[0] 
+        if idx1-idx0 > 0: 
+            chroma_mean = np.mean(chroma[idx0:idx1,:],axis=0)
+            chroma_smoothed[idx0:idx1,:] = np.tile(chroma_mean,(idx1-idx0,1))
     return chroma_smoothed
 
 def getColor(chordlabel):
