@@ -157,7 +157,7 @@ def filterPitchClassEnergy(pc_energy,fifth_width=None,rms=None, alpha=0.95):
 
     return pc_energy_filtered
 
-def estimateKeys(chroma,ic_threshold=0.01):
+def estimateKeys(chroma,ic_threshold=0.001):
     # other approach to calculate correlation with major key profiles (krumhansl)
     templates = np.zeros((12,12),dtype=float)
     key_profile = np.array([5, 2, 3.5, 2, 4.5, 4, 2, 4.5, 2, 3.5, 1.5, 4])/12 # (12,) arbitrary normation for plots
@@ -188,7 +188,8 @@ def estimateKeys(chroma,ic_threshold=0.01):
         for n in range(3): # 3 candidates
             ic = interval_categories[key_candidates[i,n],i,:]
             if ic[2] > ic_threshold and ic[3] > ic_threshold and ic[4] > ic_threshold:
-               candidates.append(key_candidates[i,n])
+               candidates.append((key_candidates[i,n],correlation_energy[i,key_candidates[i,n]]))
+        candidates.sort(key=lambda x:x[1],reverse=True)
         keys.append(candidates) 
     return keys
 
@@ -234,7 +235,7 @@ def predictLabels(t,chroma,key_candidates):
     chord_candidates = [] # estimated chord lables
 
     for time_index in range(chroma.shape[0]):
-        temp_chord_candidates =  [None,None,None]
+        temp_chord_candidates =  ["N","N","N"]
         for i,key in enumerate(key_candidates[time_index]):
             # extract feature in the estimated key for the current timestep
             r_FR = rho_FR[time_index, key]
