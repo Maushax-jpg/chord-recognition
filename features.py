@@ -8,18 +8,26 @@ def rms(y,hop_length=1024):
     """compute RMS value from mono audio signal"""
     return librosa.feature.rms(y=y,hop_length=hop_length//2).flatten()
 
-def beats(signal,use_beat_processor=True,peak_prominence=0.1):
+def beats(signal,refine_grid=True,peak_prominence=0.1):
     """compute beat-activations from a madmom Signal"""
     activation_processor =  madmom.features.beats.RNNBeatProcessor() 
     activations = activation_processor(signal)
-    if use_beat_processor:
-        proc = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)
-        beats = proc(activations) + signal.start 
-    else:
-        peaks, _ = find_peaks(activations,prominence=peak_prominence)
-        beats = [signal.start]
-        beats.extend(signal.start + peaks/100)  # create timestamps for beats (100 frames per seconds)
-        beats.append(signal.stop)
+    
+    proc = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)
+    beats = proc(activations) + signal.start 
+    if refine_grid:
+        # refine beatindices by estimating the smallest beat in the signal (lag at first maximum of activation autocorrelation)
+        act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
+        act_xx = act_xx / np.max(act_xx)
+        peaks,_ = find_peaks(act_xx,prominence=peak_prominence)
+        dt = peaks[0] / 100 # seconds
+        beats_refined = []
+        for b0 in beats:
+            beats_refined.append(b0)
+            beats_refined.append(b0+dt)
+        if beats_refined[-1] > activations.shape[0]:
+            del beats_refined[-1] 
+        return beats_refined
     return beats
 
 def sumChromaDifferences(chroma):
@@ -139,6 +147,9 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     
     t = np.linspace(sig.start,sig.stop,crp.shape[1])
     return t,crp.T  # transpose it so it matches the other chroma types 
+
+def bassChroma(sig):
+    pass
 
 if __name__ == "__main__":
     pass
