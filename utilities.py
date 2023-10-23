@@ -5,6 +5,7 @@ import mir_eval
 import itertools
 import numpy as np
 import madmom
+import pitchspace
 
 def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
     y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
@@ -136,17 +137,36 @@ def createChordIntervals(t,labels):
     est_labels.append(label[1])
     return np.array(est_intervals),est_labels
 
-def chordTemplates(template_type="triads",noise=0):
-    if template_type == "triads": # major, minor, augmented, diminished, suspended
-        templates = np.zeros((6,12),dtype=float)
-        labels = ["C","C:min","C:aug","C:dim","C:sus2","C:sus4"]
-        for i,quality in enumerate(["maj","min","aug","dim","sus2","sus4"]):
-            templates[i,:] = mir_eval.chord.quality_to_bitmap(quality) / 3
-        return templates,labels
-    elif template_type == "tetrads":
-        templates = np.zeros((8,12),dtype=float)
-        labels = ["C:7","C:maj7","C:min7","C:minmaj7","C:maj6","C:min6","C:dim7","C:hdim7"]
-        for i,quality in enumerate(["7","maj7","min7","minmaj7","maj6","min6","dim7","hdim7"]):
-            templates[i,:] = mir_eval.chord.quality_to_bitmap(quality) / 4
-        return templates,labels
-    
+def createChordTemplates(type="majmin"):
+    """create a set of chord templates for the given evaluation scheme:
+
+        majmin: "1","5","maj","min"
+        triads: "1","5","maj","min","dim","aug"
+        triads_extended: "1","5","maj","min","dim","aug","sus2","sus4"
+        majmin_sevenths: "1","5","maj","min","maj7","7","min7"
+
+        returns templates,chord_labels
+    """
+    if type == "majmin":
+        quality = ["1","5","maj","min"]
+    elif type == "triads":
+        quality = ["1","5","maj","min","dim","aug"]
+    elif type == "triads_extended":    
+        quality = ["1","5","maj","min","dim","aug","sus2","sus4"]
+    elif type == "majmin_sevenths":
+        quality = ["1","5","maj","min","maj7","7","min7"]
+    templates = np.zeros((12*len(quality)+1,12),dtype=float)
+    chord_labels = []
+    chord_index = 0
+
+    # create chord templates + No chord prototype
+    for q in quality:  
+        template = mir_eval.chord.quality_to_bitmap(q)
+        template = template / np.sum(template)
+        for pitch in pitchspace.pitch_classes:
+            templates[chord_index,:] = np.roll(template,pitch.pitch_class_index)
+            chord_labels.append(f"{pitch.name}:{q}")
+            chord_index += 1
+    templates[chord_index,:] = np.ones(12) / 12
+    chord_labels.append("N")
+    return templates,chord_labels
