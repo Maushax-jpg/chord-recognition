@@ -137,7 +137,7 @@ def createChordIntervals(t,labels):
     est_labels.append(label[1])
     return np.array(est_intervals),est_labels
 
-def createChordTemplates(type="majmin"):
+def createChordTemplates(template_type="majmin"):
     """create a set of chord templates for the given evaluation scheme:
 
         majmin: "1","5","maj","min"
@@ -147,13 +147,13 @@ def createChordTemplates(type="majmin"):
 
         returns templates,chord_labels
     """
-    if type == "majmin":
+    if template_type == "majmin":
         quality = ["1","5","maj","min"]
-    elif type == "triads":
+    elif template_type == "triads":
         quality = ["1","5","maj","min","dim","aug"]
-    elif type == "triads_extended":    
+    elif template_type == "triads_extended":    
         quality = ["1","5","maj","min","dim","aug","sus2","sus4"]
-    elif type == "majmin_sevenths":
+    elif template_type == "majmin_sevenths":
         quality = ["1","5","maj","min","maj7","7","min7"]
     templates = np.zeros((12*len(quality)+1,12),dtype=float)
     chord_labels = []

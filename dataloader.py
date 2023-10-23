@@ -3,6 +3,8 @@ from torch.utils.data import Dataset
 import mir_eval
 import mirdata
 import json
+import ipywidgets
+import IPython.display
 
 class MIRDataset(Dataset):
     """
@@ -46,3 +48,46 @@ class MIRDataset(Dataset):
             return None
         else:
             return  mir_eval.io.load_labeled_intervals(self._tracks[track_id].chords_path)
+
+
+class MIRDatasetGUI():
+    """A simple GUI to select songs from a dataset """
+    def __init__(self,path=""):
+        self.path = path
+        self.dataset = None
+        self.initializeGUI()
+        self.displayGUI()
+        
+    def initializeGUI(self):
+        self.output = ipywidgets.Output()
+        self.dropdown_dataset = ipywidgets.Dropdown(options=["beatles","rwc_popular"],value = "beatles",description='Dataset:',
+                                  layout=ipywidgets.Layout(width='20%'),disabled=False)
+        self.dropdown_split = ipywidgets.Dropdown(options=[1, 2, 3, 4, 5, 6, 7],value = 3,description='Split:',
+                                        layout=ipywidgets.Layout(width='15%'),disabled=False)
+        self.dropdown_id = ipywidgets.Dropdown(description='Track ID:',disabled=False,layout=ipywidgets.Layout(width='20%'))
+        self.textbox_track_id = ipywidgets.Text(description='',disabled=True)
+        self.button_load = ipywidgets.Button(description='Load Track')
+        self.selection = ipywidgets.HBox([self.dropdown_dataset,self.dropdown_split, self.dropdown_id,self.textbox_track_id, self.button_load])
+
+        # register callback functions
+        self.dropdown_split.observe(self.update_dropdown_id_options, 'value')
+        self.dropdown_id.observe(self.update_selected_track_id, 'value')
+
+    def update_dropdown_id_options(self,*args):
+        selected_split = self.dropdown_split.value
+        self.dataset = MIRDataset(self.dropdown_dataset.value,basepath=self.path, split_nr=selected_split)
+        self.dropdown_id.options = list(self.dataset.getTrackList().keys())
+        self.dropdown_id.value = list(self.dataset.getTrackList().keys())[0]
+
+    def update_selected_track_id(self,*args):
+        self.textbox_track_id.value = self.dataset.getTrackList()[self.dropdown_id.value]
+
+    def on_control_change(self,change):  
+        # change some controls according to updates
+        pass
+        # plotData(range_slider.value,beat_alignment.value,chroma_type.value)
+
+    def displayGUI(self):
+        IPython.display.display(self.selection,self.output)
+
+    

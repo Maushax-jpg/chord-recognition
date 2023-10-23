@@ -3,32 +3,25 @@ import librosa
 import madmom.features
 from scipy.fftpack import dct,idct
 from scipy.signal import find_peaks
+import itertools
 
 def rms(y,hop_length=1024):
     """compute RMS value from mono audio signal"""
     return librosa.feature.rms(y=y,hop_length=hop_length//2).flatten()
 
-def beats(signal,refine_grid=True,peak_prominence=0.1):
-    """compute beat-activations from a madmom Signal"""
+def beats(signal):
+    """compute beat-activations from a madmom Signal""" 
     activation_processor =  madmom.features.beats.RNNBeatProcessor() 
     activations = activation_processor(signal)
-    
-    proc = madmom.features.beats.DBNBeatTrackingProcessor(fps=100)
-    beats = proc(activations) + signal.start 
-    if refine_grid:
-        # refine beatindices by estimating the smallest beat in the signal (lag at first maximum of activation autocorrelation)
-        act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
-        act_xx = act_xx / np.max(act_xx)
-        peaks,_ = find_peaks(act_xx,prominence=peak_prominence)
-        dt = peaks[0] / 100 # seconds
-        beats_refined = []
-        for b0 in beats:
-            beats_refined.append(b0)
-            beats_refined.append(b0+dt)
-        if beats_refined[-1] > activations.shape[0]:
-            del beats_refined[-1] 
-        return beats_refined
-    return beats
+
+    # estimate the smallest beat in the signal (lag at first maximum of activation autocorrelation)
+    act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
+    act_xx = act_xx / np.max(act_xx)
+    peaks,_ = find_peaks(act_xx,prominence=0.01)
+    peaks,peak_params = find_peaks(activations,height=0.001,prominence=0.001,distance=peaks[0]//2)
+    beats = [p/100 for p in peaks]    # seconds
+    beat_activations = [activations[b] for b in peaks]
+    return beats,beat_activations
 
 def sumChromaDifferences(chroma):
     if chroma.shape[1] != 12:
@@ -148,8 +141,12 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     t = np.linspace(sig.start,sig.stop,crp.shape[1])
     return t,crp.T  # transpose it so it matches the other chroma types 
 
-def bassChroma(sig):
-    pass
+def deepChroma(sig,split_nr=1):
+    model_path = [f"/home/max/ET-TI/Masterarbeit/models/ismir2016/chroma_dnn_{split_nr}.pkl"]
+    dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=model_path)
+    chroma = dcp(sig)
+    timevector = np.linspace(sig.start,sig.stop,chroma.shape[0])
+    return timevector,chroma
 
 if __name__ == "__main__":
     pass
