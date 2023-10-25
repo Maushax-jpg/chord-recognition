@@ -88,7 +88,7 @@ def plotChordAnnotations(ax,annotations,time_interval=(0,10),format_label=False)
         if format_label:
             label = formatChordLabel(label)
         if t_stop - t_start > 0.4:
-            ax.text(t_start+ (t_stop - t_start)/2, 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=10, color='k')
+            ax.text(t_start+ (t_stop - t_start)/2, 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=9, color='k')
     ax.set_ylim(0,2)
     ax.axis("off")
     ax.set_xlim(time_interval)
@@ -148,7 +148,7 @@ def createChordTemplates(template_type="majmin"):
         returns templates,chord_labels
     """
     if template_type == "majmin":
-        quality = ["1","5","maj","min"]
+        quality = ["maj","min"]
     elif template_type == "triads":
         quality = ["1","5","maj","min","dim","aug"]
     elif template_type == "triads_extended":    

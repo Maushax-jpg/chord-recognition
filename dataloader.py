@@ -49,7 +49,6 @@ class MIRDataset(Dataset):
         else:
             return  mir_eval.io.load_labeled_intervals(self._tracks[track_id].chords_path)
 
-
 class MIRDatasetGUI():
     """A simple GUI to select songs from a dataset """
     def __init__(self,path=""):
@@ -57,7 +56,7 @@ class MIRDatasetGUI():
         self.dataset = None
         self.initializeGUI()
         self.displayGUI()
-        
+
     def initializeGUI(self):
         self.output = ipywidgets.Output()
         self.dropdown_dataset = ipywidgets.Dropdown(options=["beatles","rwc_popular"],value = "beatles",description='Dataset:',
@@ -72,7 +71,9 @@ class MIRDatasetGUI():
         # register callback functions
         self.dropdown_split.observe(self.update_dropdown_id_options, 'value')
         self.dropdown_id.observe(self.update_selected_track_id, 'value')
-
+        self.update_dropdown_id_options()
+        self.update_selected_track_id()
+        
     def update_dropdown_id_options(self,*args):
         selected_split = self.dropdown_split.value
         self.dataset = MIRDataset(self.dropdown_dataset.value,basepath=self.path, split_nr=selected_split)
@@ -90,4 +91,7 @@ class MIRDatasetGUI():
     def displayGUI(self):
         IPython.display.display(self.selection,self.output)
 
-    
+    def getSelectedTrack(self):
+        target = self.dataset.getAnnotations(self.dropdown_id.value)
+        audio_path = self.dataset._tracks[self.dropdown_id.value].audio_path
+        return audio_path,target

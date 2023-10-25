@@ -2,10 +2,8 @@ import numpy as np
 import utilities
 
 def computeTemplateCorrelation(chroma,template_type="majmin"):
-    labels,templates = utilities.createChordTemplates(templateType=template_type)
-    max_vals = np.max(chroma, axis=1)
-    chroma_norm = chroma / (max_vals[:,None]+np.finfo(float).eps)
-    correlation = np.dot(templates,chroma_norm.T)
+    templates,labels = utilities.createChordTemplates(template_type=template_type)
+    correlation = np.dot(templates,chroma.T)
     return correlation,labels
 
 def transcribeWithTemplates(t_chroma,chroma,template_type="majmin"):

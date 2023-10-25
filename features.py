@@ -9,19 +9,28 @@ def rms(y,hop_length=1024):
     """compute RMS value from mono audio signal"""
     return librosa.feature.rms(y=y,hop_length=hop_length//2).flatten()
 
-def beats(signal):
+def beats(signal,algorithm="ellis"):
     """compute beat-activations from a madmom Signal""" 
-    activation_processor =  madmom.features.beats.RNNBeatProcessor() 
-    activations = activation_processor(signal)
-
-    # estimate the smallest beat in the signal (lag at first maximum of activation autocorrelation)
-    act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
-    act_xx = act_xx / np.max(act_xx)
-    peaks,_ = find_peaks(act_xx,prominence=0.01)
-    peaks,peak_params = find_peaks(activations,height=0.001,prominence=0.001,distance=peaks[0]//2)
-    beats = [p/100 for p in peaks]    # seconds
-    beat_activations = [activations[b] for b in peaks]
-    return beats,beat_activations
+    if algorithm == "ellis":
+        tempo,beats = librosa.beat.beat_track(y=signal,units="time")
+        return beats
+    elif algorithm == "RNN":
+        activation_processor =  madmom.features.beats.RNNBeatProcessor()
+        processor = madmom.features.beats.BeatTrackingProcessor(fps=100) 
+        activations = activation_processor(signal)
+        beats = processor(activations)
+        return beats
+    else:
+        activation_processor =  madmom.features.beats.RNNBeatProcessor(online=True, nn_files=[madmom.models.BEATS_LSTM[0]])
+        activations = activation_processor(signal)
+        # estimate the smallest beat in the signal (lag at first maximum of activation autocorrelation)
+        act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
+        act_xx = act_xx / np.max(act_xx)
+        peaks,_ = find_peaks(act_xx,prominence=0.01)
+        peaks,peak_params = find_peaks(activations,height=0.001,prominence=0.001,distance=peaks[0]//2)
+        beats = [p/100 for p in peaks]    # seconds
+        beat_activations = [activations[b] for b in peaks]
+        return beats,beat_activations
 
 def sumChromaDifferences(chroma):
     if chroma.shape[1] != 12:
@@ -109,20 +118,25 @@ def cqt(y,fs=22050, hop_length=1024, midi_min=12, octaves=8,bins_per_octave=36):
     time_vector = np.linspace(hop_length/fs,y.shape[0]/fs,cqt.shape[1])
     return time_vector, cqt
 
-def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,filter_scale=1):
+def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,window=True):
     """Chroma DCT-Reduced Log Pitch from an madmom signal"""
     bins_per_octave = 36
     octaves = 8
     y = np.array(sig.data)
     estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
-    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=filter_scale,
+    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
                         bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
 
     # pick every third coefficient from oversampled cqt
     pitchgram_cqt = np.finfo(float).eps * np.ones((midinote_stop,C.shape[1])) 
+    # pitchgram window function
+
     for note in range(midinote_start,midinote_stop):
         try:
-            pitchgram_cqt[note,:] = C[(note-midinote_start)*3,:]
+            if window:
+                pitchgram_cqt[note,:] = np.exp(-(note-60)**2 / (2* 15**2)) * C[(note-midinote_start)*3,:]
+            else:
+                pitchgram_cqt[note,:] = C[(note-midinote_start)*3,:]
         except IndexError:
             break
     v = pitchgram_cqt ** 2
@@ -132,12 +146,10 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     vLogDCT[:nCRP,:] = 0  # liftering hochpass
     vLogDCT[nCRP,:] = 0.5 * vLogDCT[nCRP,:]
 
-    vLog_lift = idct(vLogDCT, norm='ortho', axis=0)
-    vLift = 1/100 * (np.exp(vLog_lift)-1); 
+    vLift = idct(vLogDCT, norm='ortho', axis=0)
     crp = vLift.reshape(10,12,-1)
-    crp = np.maximum(0, np.sum(crp, axis=0))
-    crp = crp / (np.sum(crp,axis=0)+np.finfo(float).eps)
-    
+    crp = np.sum(crp, axis=0)
+    crp = crp / np.expand_dims(np.sum(np.abs(crp),axis=0)+np.finfo(float).eps,axis=0)
     t = np.linspace(sig.start,sig.stop,crp.shape[1])
     return t,crp.T  # transpose it so it matches the other chroma types 
 
