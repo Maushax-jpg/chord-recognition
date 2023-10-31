@@ -13,8 +13,8 @@ def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
     timevector = np.linspace(sig.start,sig.stop,sig.num_samples)
     return timevector,sig
 
-def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmax=0.5):
-    img = librosa.display.specshow(chroma.T,x_coords=t.T,x_axis='time', y_axis='chroma', cmap="Reds", ax=ax, vmin=0, vmax=vmax)
+def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmin=0,vmax=0.5,cmap="Reds"):
+    img = librosa.display.specshow(chroma,x_coords=t.T,x_axis='time', y_axis='chroma', cmap=cmap, ax=ax,vmin=vmin, vmax=vmax)
     if downbeats is not None:
         downbeats = [beat for beat in downbeats if t[0] <= beat <= t[-1]]
         ax.vlines(downbeats,-0.5,11.5,'k',linestyles='dashed',alpha=0.6)
@@ -140,22 +140,22 @@ def createChordIntervals(t,labels):
 def createChordTemplates(template_type="majmin"):
     """create a set of chord templates for the given evaluation scheme:
 
-        majmin: "1","5","maj","min"
-        triads: "1","5","maj","min","dim","aug"
-        triads_extended: "1","5","maj","min","dim","aug","sus2","sus4"
-        majmin_sevenths: "1","5","maj","min","maj7","7","min7"
+        majmin: "maj","min"
+        triads: "maj","min","dim","aug"
+        triads_extended: "maj","min","dim","aug","sus2","sus4"
+        majmin_sevenths: "maj","min","maj7","7","min7"
 
         returns templates,chord_labels
     """
     if template_type == "majmin":
         quality = ["maj","min"]
     elif template_type == "triads":
-        quality = ["1","5","maj","min","dim","aug"]
+        quality = ["maj","min","dim","aug"]
     elif template_type == "triads_extended":    
-        quality = ["1","5","maj","min","dim","aug","sus2","sus4"]
+        quality = ["maj","min","dim","aug","sus2","sus4"]
     elif template_type == "majmin_sevenths":
-        quality = ["1","5","maj","min","maj7","7","min7"]
-    templates = np.zeros((12*len(quality)+1,12),dtype=float)
+        quality = ["maj","min","maj7","7","min7"]
+    templates = np.zeros((12,12*len(quality)+1),dtype=float)
     chord_labels = []
     chord_index = 0
 
@@ -164,9 +164,10 @@ def createChordTemplates(template_type="majmin"):
         template = mir_eval.chord.quality_to_bitmap(q)
         template = template / np.sum(template)
         for pitch in pitchspace.pitch_classes:
-            templates[chord_index,:] = np.roll(template,pitch.pitch_class_index)
+            templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
-    templates[chord_index,:] = np.ones(12) / 12
+    for i in range(12):
+        templates[i,chord_index] = 1/12
     chord_labels.append("N")
     return templates,chord_labels

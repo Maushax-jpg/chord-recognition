@@ -119,7 +119,10 @@ def cqt(y,fs=22050, hop_length=1024, midi_min=12, octaves=8,bins_per_octave=36):
     return time_vector, cqt
 
 def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,window=True):
-    """Chroma DCT-Reduced Log Pitch from an madmom signal"""
+    """Chroma DCT-Reduced Log Pitch from an madmom signal
+        returns time_vector (T,)
+                chromagram  (T,12)
+    """
     bins_per_octave = 36
     octaves = 8
     y = np.array(sig.data)
@@ -149,9 +152,9 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     vLift = idct(vLogDCT, norm='ortho', axis=0)
     crp = vLift.reshape(10,12,-1)
     crp = np.sum(crp, axis=0)
-    crp = crp / np.expand_dims(np.sum(np.abs(crp),axis=0)+np.finfo(float).eps,axis=0)
+    crp = crp /np.sum(np.abs(crp)+np.finfo(float).eps,axis=0)
     t = np.linspace(sig.start,sig.stop,crp.shape[1])
-    return t,crp.T  # transpose it so it matches the other chroma types 
+    return t,crp
 
 def deepChroma(sig,split_nr=1):
     model_path = [f"/home/max/ET-TI/Masterarbeit/models/ismir2016/chroma_dnn_{split_nr}.pkl"]
