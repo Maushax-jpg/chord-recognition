@@ -1,5 +1,35 @@
 import numpy as np
+import mir_eval
 import utilities
+import scipy.ndimage
+import librosa
+
+def harmonicPercussiveResidualSeparation(sig,beta=2,n_fft=1024,fs=22050):
+    time_filter_length = 0.2 # seconds
+    frequency_filter_length = 500 # Hz
+    hs = n_fft // 2 # hopsize
+    X = librosa.stft(sig,n_fft=n_fft,hop_length=hs,window='hann', center=True, pad_mode='constant')
+    Y = np.abs(X) ** 2
+    L_med_f = int(frequency_filter_length / (fs/n_fft))
+    L_med_t = int(time_filter_length / (hs /fs))
+
+    Y_p = scipy.ndimage.median_filter(Y, (L_med_f,1))
+    Y_h = scipy.ndimage.median_filter(Y, (1,L_med_t))
+
+    M_h = Y_h / (Y_p+np.finfo(float).eps) > beta
+    M_p = Y_p / (Y_h+np.finfo(float).eps) >= beta
+    M_r = np.logical_not(M_h + M_p)
+
+    X_h = M_h * X
+    X_p = M_p * X
+    X_r = M_r * X
+
+    y_harm = librosa.istft(X_h,n_fft=n_fft,hop_length=hs,window='hann', center=True, length=sig.size)
+    y_perc = librosa.istft(X_p,n_fft=n_fft,hop_length=hs,window='hann', center=True, length=sig.size)
+    y_res = librosa.istft(X_r,n_fft=n_fft,hop_length=hs,window='hann', center=True, length=sig.size)
+    
+    return y_harm,y_perc,y_res
+    
 
 def computeTemplateCorrelation(chroma,template_type="majmin"):
     templates,labels = utilities.createChordTemplates(template_type=template_type)
@@ -113,13 +143,14 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
     mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
     return score,mean_seg_score
 
-def transcribeChromagram(chroma,**kwargs):
+def transcribeChromagram(t_chroma,chroma,**kwargs):
     ## prefilter ## 
     if kwargs.get("prefilter",None) == "median":
         N = kwargs.get("prefilter_length",15)
         chroma = scipy.ndimage.median_filter(chroma, size=(1, N))
-    ## pattern matching ## 
-    templates,labels = utilities.createChordTemplates(template_type=args.vocabulary) 
+    ## pattern matching ##         
+    vocabulary = kwargs.get("vocabulary","majmin")
+    templates,labels = utilities.createChordTemplates(template_type=vocabulary) 
     correlation = np.matmul(templates.T,chroma)
     correlation = np.clip(correlation,a_min=0,a_max=1) # disregard negative values
     ## postfilter ##
@@ -134,8 +165,7 @@ def transcribeChromagram(chroma,**kwargs):
         est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
     elif postfilter == "hmm":
         p = kwargs.get("transition_prob",0.1)
-        vocabulary = kwargs.get("vocabulary","majmin")
-        est_intervals,est_labels = transcribe.transcribeHMM(t_chroma,chroma,p=p,template_type=vocabulary)
+        est_intervals,est_labels = transcribeHMM(t_chroma,chroma,p=p,template_type=vocabulary)
     return est_intervals, est_labels
 
 

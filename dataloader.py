@@ -10,7 +10,7 @@ class MIRDataset(Dataset):
     """
     Dataloader class for MIR Datasets. Available Datasets are "rwc_popular" and "beatles"
     """
-    def __init__(self,name,basepath="/home/max/ET-TI/Masterarbeit/mirdata/",split_nr=0):
+    def __init__(self,name,basepath="/home/max/ET-TI/Masterarbeit/mirdata/",split_nr=1):
         super().__init__()
         self._path = basepath
         self._split_nr = split_nr
