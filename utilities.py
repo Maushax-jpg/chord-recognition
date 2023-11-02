@@ -10,9 +10,14 @@ import pitchspace
 def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
     y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
     sig = madmom.audio.signal.Signal(y, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop)
+    sig = madmom.audio.signal.normalize(sig)
     timevector = np.linspace(sig.start,sig.stop,sig.num_samples)
     return timevector,sig
 
+def loadAnnotations(annotationpath):
+    intervals, labels = mir_eval.io.load_labeled_intervals(annotationpath)
+    return intervals, labels
+    
 def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmin=0,vmax=0.5,cmap="Reds"):
     img = librosa.display.specshow(chroma,x_coords=t.T,x_axis='time', y_axis='chroma', cmap=cmap, ax=ax,vmin=vmin, vmax=vmax)
     if downbeats is not None:

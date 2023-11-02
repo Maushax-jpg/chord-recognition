@@ -118,7 +118,20 @@ def cqt(y,fs=22050, hop_length=1024, midi_min=12, octaves=8,bins_per_octave=36):
     time_vector = np.linspace(hop_length/fs,y.shape[0]/fs,cqt.shape[1])
     return time_vector, cqt
 
-def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,window=True):
+def cqtChroma(sig,fs=22050):
+    """CQT Chroma from a madmom signal
+        returns time_vector (T,)
+                chromagram  (T,12)
+    """
+    try:
+        chroma_cq = librosa.feature.chroma_cqt(y=sig, sr=fs,bins_per_octave=36)
+    except TypeError: # quick bugfix for a problem with regex compilation.. 
+        chroma_cq = librosa.feature.chroma_cqt(y=sig, sr=fs,bins_per_octave=36)
+    chroma_cq = chroma_cq / (np.sum(chroma_cq,axis=0)+np.finfo(float).eps)
+    t_chroma_cq = np.linspace(sig.start,sig.stop,chroma_cq.shape[1])
+    return t_chroma_cq,chroma_cq
+
+def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,window=False):
     """Chroma DCT-Reduced Log Pitch from an madmom signal
         returns time_vector (T,)
                 chromagram  (T,12)
@@ -127,13 +140,19 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     octaves = 8
     y = np.array(sig.data)
     estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
-    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
-                        bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
+    try: 
+        C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
+                            bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
+                            hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
+    except TypeError:
+       C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
+                                bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
+                                hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
 
-    # pick every third coefficient from oversampled cqt
+    # pick every third coefficient from oversampled and tuned cqt
     pitchgram_cqt = np.finfo(float).eps * np.ones((midinote_stop,C.shape[1])) 
+    
     # pitchgram window function
-
     for note in range(midinote_start,midinote_stop):
         try:
             if window:
@@ -157,10 +176,17 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     return t,crp
 
 def deepChroma(sig,split_nr=1):
+    """Deep Chroma from a madmom signal
+        returns time_vector (T,)
+                chromagram  (T,12)
+    """
     model_path = [f"/home/max/ET-TI/Masterarbeit/models/ismir2016/chroma_dnn_{split_nr}.pkl"]
-    dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=model_path)
-    chroma = dcp(sig)
-    timevector = np.linspace(sig.start,sig.stop,chroma.shape[0])
+    if split_nr is not None:
+        dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=model_path)
+    else:
+        dcp = madmom.audio.chroma.DeepChromaProcessor()
+    chroma = dcp(sig).T
+    timevector = np.linspace(sig.start,sig.stop,chroma.shape[1])
     return timevector,chroma
 
 if __name__ == "__main__":

@@ -12,6 +12,9 @@ def transcribeWithTemplates(t_chroma,chroma,template_type="majmin"):
     estimated_intervals,estimated_labels =  utilities.createChordIntervals(t_chroma,estimated_labels)
     return estimated_intervals,estimated_labels
 
+def applyPrefilter(chroma,filter_type="median",filterlength=17):
+    return scipy.ndimage.median_filter(chroma, size=(1, args.prefilter_params))
+
 def transcribeHMM(t_chroma,chroma,p=0.1,template_type="majmin"):
     correlation,labels = computeTemplateCorrelation(chroma,template_type)
     # neglect negative values of the correlation
@@ -90,3 +93,130 @@ def viterbi_log_likelihood(A, C, B_O):
         S_mat[S_opt[n], n] = 1
 
     return S_mat, S_opt, D_log, E
+
+def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,scheme="majmin"):
+    """evaluate Transcription score according to MIREX scheme"""
+    est_intervals, est_labels = mir_eval.util.adjust_intervals(
+            est_intervals, est_labels, ref_intervals.min(),
+            ref_intervals.max(), mir_eval.chord.NO_CHORD,
+            mir_eval.chord.NO_CHORD)
+    (intervals,ref_labels,est_labels) = mir_eval.util.merge_labeled_intervals(
+        ref_intervals, ref_labels, est_intervals, est_labels)
+    durations = mir_eval.util.intervals_to_durations(intervals)
+    if scheme == "majmin":
+        comparisons = mir_eval.chord.majmin(ref_labels, est_labels)
+    elif scheme == "triads":
+        comparisons = mir_eval.chord.triads(ref_labels, est_labels)
+    elif scheme == "tetrads":
+        comparisons = mir_eval.chord.tetrads(ref_labels, est_labels)
+    score = round(mir_eval.chord.weighted_accuracy(comparisons, durations),2)
+    mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
+    return score,mean_seg_score
+
+def transcribeChromagram(chroma,**kwargs):
+    ## prefilter ## 
+    if kwargs.get("prefilter",None) == "median":
+        N = kwargs.get("prefilter_length",15)
+        chroma = scipy.ndimage.median_filter(chroma, size=(1, N))
+    ## pattern matching ## 
+    templates,labels = utilities.createChordTemplates(template_type=args.vocabulary) 
+    correlation = np.matmul(templates.T,chroma)
+    correlation = np.clip(correlation,a_min=0,a_max=1) # disregard negative values
+    ## postfilter ##
+    postfilter = kwargs.get("postfilter",None)
+    if postfilter is None:
+        unfiltered_labels = [labels[np.argmax(correlation[:,i])] for i in range(chroma.shape[1])]
+        est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
+    elif postfilter == "median":
+        N = kwargs.get("postfilter_length",15)
+        correlation = scipy.ndimage.median_filter(correlation, size=(1, N))
+        unfiltered_labels = [labels[np.argmax(correlation[:,i])] for i in range(chroma.shape[1])]
+        est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
+    elif postfilter == "hmm":
+        p = kwargs.get("transition_prob",0.1)
+        vocabulary = kwargs.get("vocabulary","majmin")
+        est_intervals,est_labels = transcribe.transcribeHMM(t_chroma,chroma,p=p,template_type=vocabulary)
+    return est_intervals, est_labels
+
+
+if __name__ == "__main__":
+    import argparse
+    import features
+    import transcribe
+    import matplotlib.pyplot as plt
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file_path',help='filepath to song')
+    parser.add_argument('--hps', help='choose harmonic percussive source separation type: hprs, htdemucs')
+    parser.add_argument('--prefilter', help='choose prefilter type: median, none')
+    parser.add_argument('--prefilter_params', help='choose prefilter length: n',type=int,default=15)
+    parser.add_argument('--chroma_type', help='choose chromagram type: cqt, crp, dcp')
+    parser.add_argument('--vocabulary', help='choose chord vocabulary: majmin, triads, triads_extended,majmin_sevenths',default='majmin')
+    parser.add_argument('--postfilter',help='choose postfilter type: median, hmm',default=None)
+    parser.add_argument('--postfilter_params', help='choose postfilter length: n',type=int,default=1)
+    parser.add_argument('--output_path', help='specify output path for transcription results',default=None)
+    parser.add_argument('--filename', help='specify output filename for transcription results',default="transcription.chords")
+    args = parser.parse_args()
+    
+    audio_path = args.file_path
+    if audio_path is None:
+        print("Please specify input path for audiofile!")
+        quit()
+    time_vector,signal = utilities.loadAudio(audio_path)
+
+    ## HPS ##
+    # not implemented yet
+
+    ## compute chromagram ##
+    if args.chroma_type == "crp":
+        t_chroma, chroma = features.crpChroma(signal)
+    elif args.chroma_type == "dcp":
+        t_chroma, chroma = features.deepChroma(signal)
+    elif args.chroma_type == "cqt":
+        t_chroma, chroma = features.cqtChroma(signal)
+    else:
+        print(f"invalid chroma type {args.chroma_type}")
+        quit()
+
+    ## prefilter ## 
+    if args.prefilter == "median":
+        chroma = scipy.ndimage.median_filter(chroma, size=(1, args.prefilter_params))
+
+    ## pattern matching ## 
+    templates,labels = utilities.createChordTemplates(template_type=args.vocabulary) 
+    correlation = np.matmul(templates.T,chroma)
+    correlation = np.clip(correlation,a_min=0,a_max=1) # disregard negative values
+
+    ## postfilter ##
+    if args.postfilter is None:
+        unfiltered_labels = [labels[np.argmax(correlation[:,i])] for i in range(chroma.shape[1])]
+        est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
+    elif args.postfilter == "median":
+        correlation = scipy.ndimage.median_filter(correlation, size=(1, args.postfilter_params))
+        unfiltered_labels = [labels[np.argmax(correlation[:,i])] for i in range(chroma.shape[1])]
+        est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
+    elif args.postfilter == "hmm":
+        est_intervals,est_labels = transcribe.transcribeHMM(t_chroma,chroma,p=0.1,template_type=args.vocabulary)
+
+    if args.output_path is not None:
+        fpath = f"{args.output_path}/{args.filename}"
+        f = open(fpath, "w")
+        # save to a .chords file
+        for interval,label in zip(est_intervals,est_labels):
+            f.write(f"{interval[0]:0.6f}\t{interval[1]:0.6f}\t{label}\n")
+        f.close()
+
+        fig,ax = plt.subplots(3,2,height_ratios=(1,3,10),width_ratios=(9.5,.5))
+        utilities.plotChordAnnotations(ax[0,0],(est_intervals,est_labels),(0,10))
+        ax[1,0].plot(time_vector,signal )
+        ax[1,0].set_ylim(0,1)
+        ax[1,0].set_xlim(0,10)
+        ax[1,1].set_axis_off()
+        ax[0,1].set_axis_off()
+        img = utilities.plotChromagram(ax[2,0],t_chroma,chroma,None,None,vmin=-np.max(chroma),vmax=np.max(chroma),cmap='bwr')
+        fig.colorbar(img,cax=ax[2,1],cmap="bwr")
+        ax[2,0].set_xlim([0,10])
+        plt.savefig(f"{args.output_path}/result_preview.png")
+        
+    intervals,  labels = utilities.loadAnnotations(f"{args.output_path}/{args.filename}")
+    print(labels)
