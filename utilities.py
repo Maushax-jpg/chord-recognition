@@ -8,7 +8,10 @@ import madmom
 import pitchspace
 
 def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
-    y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
+    try:
+        y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
+    except FileNotFoundError:
+        y, _ = madmom.io.audio.load_audio_file(audiopath.rsplit('.', 1)[0] + '.mp3', sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
     sig = madmom.audio.signal.Signal(y, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop)
     sig = madmom.audio.signal.normalize(sig)
     timevector = np.linspace(sig.start,sig.stop,sig.num_samples)
@@ -180,20 +183,26 @@ def createChordTemplates(template_type="majmin"):
 def saveTranscriptionResults(output_path,name,t_chroma,chroma,est_intervals,est_labels,ref_intervals,ref_labels):
     # store transcription and save a preview
     if output_path is not None:
-        fpath = f"{output_path}/{name}.chords"
+        fpath = f"{output_path}/transcriptions/{name}.chords"
         f = open(fpath, "w")
         # save to a .chords file
         for interval,label in zip(est_intervals,est_labels):
             f.write(f"{interval[0]:0.6f}\t{interval[1]:0.6f}\t{label}\n")
         f.close()
 
-        fig,ax = plt.subplots(3,2,height_ratios=(1,1,10),width_ratios=(9.5,.5))
-        plotChordAnnotations(ax[0,0],(ref_intervals,ref_labels),(0,15))
-        plotChordAnnotations(ax[1,0],(est_intervals,est_labels),(0,15))
+        fig,ax = plt.subplots(3,2,height_ratios=(1,1,10),width_ratios=(9.5,.5),figsize=(30,10))
+        plotChordAnnotations(ax[0,0],(ref_intervals,ref_labels),(0,30))
+        ax[0,0].text(0,1.7,"Annotated chords")
+        plotChordAnnotations(ax[1,0],(est_intervals,est_labels),(0,30))
+        ax[1,0].text(0,1.7,"Estimated chords")
         ax[1,1].set_axis_off()
         ax[0,1].set_axis_off()
         img = plotChromagram(ax[2,0],t_chroma,chroma,None,None,vmin=-np.max(chroma),vmax=np.max(chroma),cmap='bwr')
         fig.colorbar(img,cax=ax[2,1],cmap="bwr")
-        ax[2,0].set_xlim([0,15])
-        plt.savefig(f"{output_path}/{name}.png")
+        ax[2,0].set_xlim([0,30])
+        plt.savefig(f"{output_path}/chromagrams/{name}.pdf", dpi=600)
         plt.close()
+    
+
+def saveTranscriptionParameters(**kwargs):
+    pass

@@ -139,6 +139,8 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
         comparisons = mir_eval.chord.triads(ref_labels, est_labels)
     elif scheme == "tetrads":
         comparisons = mir_eval.chord.tetrads(ref_labels, est_labels)
+    elif scheme == "majmin_sevenths":
+        comparisons = mir_eval.chord.tetrads(ref_labels, est_labels)
     score = round(mir_eval.chord.weighted_accuracy(comparisons, durations),2)
     mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
     return score,mean_seg_score
