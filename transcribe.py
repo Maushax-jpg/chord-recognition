@@ -3,6 +3,14 @@ import mir_eval
 import utilities
 import scipy.ndimage
 import librosa
+import madmom
+
+def transcribeDeepChroma(t_chroma,chroma):
+    chord_processor = madmom.features.chords.DeepChromaChordRecognitionProcessor()
+    estimations = chord_processor(chroma.T)
+    intervals = np.array([(x[0],x[1]) for x in estimations])
+    labels = [x[2] for x in estimations]
+    return intervals,labels
 
 def harmonicPercussiveResidualSeparation(sig,beta=2,n_fft=1024,fs=22050):
     time_filter_length = 0.2 # seconds
@@ -45,7 +53,7 @@ def transcribeWithTemplates(t_chroma,chroma,template_type="majmin"):
 def applyPrefilter(chroma,filter_type="median",filterlength=17):
     return scipy.ndimage.median_filter(chroma, size=(1, args.prefilter_params))
 
-def transcribeHMM(t_chroma,chroma,p=0.1,template_type="majmin"):
+def transcribeHMM(t_chroma,chroma,rms,p=0.1,template_type="majmin"):
     correlation,labels = computeTemplateCorrelation(chroma,template_type)
     # neglect negative values of the correlation
     correlation = np.clip(correlation,0,100)
@@ -145,7 +153,7 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
     mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
     return score,mean_seg_score
 
-def transcribeChromagram(t_chroma,chroma,**kwargs):
+def transcribeChromagram(t_chroma,chroma,rms,**kwargs):
     ## prefilter ## 
     if kwargs.get("prefilter",None) == "median":
         N = kwargs.get("prefilter_length",15)
@@ -167,7 +175,7 @@ def transcribeChromagram(t_chroma,chroma,**kwargs):
         est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
     elif postfilter == "hmm":
         p = kwargs.get("transition_prob",0.1)
-        est_intervals,est_labels = transcribeHMM(t_chroma,chroma,p=p,template_type=vocabulary)
+        est_intervals,est_labels = transcribeHMM(t_chroma,chroma,rms,p=p,template_type=vocabulary)
     return est_intervals, est_labels
 
 

@@ -141,8 +141,9 @@ def createChordIntervals(t,labels):
             t_start = time[1]
         else: # no chord change
             continue
-    est_intervals.append([t_start,time[1]])
-    est_labels.append(label[1])
+    if t_start != time[1]: # process last chord change
+        est_intervals.append([t_start,time[-1]])
+        est_labels.append(label[1])
     return np.array(est_intervals),est_labels
 
 def createChordTemplates(template_type="majmin"):
@@ -190,16 +191,16 @@ def saveTranscriptionResults(output_path,name,t_chroma,chroma,est_intervals,est_
             f.write(f"{interval[0]:0.6f}\t{interval[1]:0.6f}\t{label}\n")
         f.close()
 
-        fig,ax = plt.subplots(3,2,height_ratios=(1,1,10),width_ratios=(9.5,.5),figsize=(30,10))
-        plotChordAnnotations(ax[0,0],(ref_intervals,ref_labels),(0,30))
+        fig,ax = plt.subplots(3,2,height_ratios=(1,1,10),width_ratios=(9.5,.5),figsize=(15,10))
+        plotChordAnnotations(ax[0,0],(ref_intervals,ref_labels),(0,15))
         ax[0,0].text(0,1.7,"Annotated chords")
-        plotChordAnnotations(ax[1,0],(est_intervals,est_labels),(0,30))
+        plotChordAnnotations(ax[1,0],(est_intervals,est_labels),(0,15))
         ax[1,0].text(0,1.7,"Estimated chords")
         ax[1,1].set_axis_off()
         ax[0,1].set_axis_off()
         img = plotChromagram(ax[2,0],t_chroma,chroma,None,None,vmin=-np.max(chroma),vmax=np.max(chroma),cmap='bwr')
         fig.colorbar(img,cax=ax[2,1],cmap="bwr")
-        ax[2,0].set_xlim([0,30])
+        ax[2,0].set_xlim([0,15])
         plt.savefig(f"{output_path}/chromagrams/{name}.pdf", dpi=600)
         plt.close()
     

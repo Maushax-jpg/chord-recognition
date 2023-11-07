@@ -131,7 +131,7 @@ def cqtChroma(sig,fs=22050):
     t_chroma_cq = np.linspace(sig.start,sig.stop,chroma_cq.shape[1])
     return t_chroma_cq,chroma_cq
 
-def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,window=False):
+def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote_stop=120,window=False,norm="l1"):
     """Chroma DCT-Reduced Log Pitch from an madmom signal
         returns time_vector (T,)
                 chromagram  (T,12)
@@ -171,7 +171,10 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=22,midinote_start=12,midinote
     vLift = idct(vLogDCT, norm='ortho', axis=0)
     crp = vLift.reshape(10,12,-1)
     crp = np.sum(crp, axis=0)
-    crp = crp /np.sum(np.abs(crp)+np.finfo(float).eps,axis=0)
+    if norm == "l1":
+        crp = crp /np.sum(np.abs(crp)+np.finfo(float).eps,axis=0)
+    elif norm == "l2":
+        crp = crp / np.linalg.norm(crp)
     t = np.linspace(sig.start,sig.stop,crp.shape[1])
     return t,crp
 

@@ -25,6 +25,8 @@ class MIRDataset(Dataset):
     def __getitem__(self, track_id):
         target = self.getAnnotations(track_id)
         audio_path = self._tracks[track_id].audio_path
+        # replace "' with _"
+        audio_path = audio_path.replace("'","_")
         return audio_path, target
     
     def getTrackIDs(self):
@@ -47,7 +49,9 @@ class MIRDataset(Dataset):
         if self._name == 'billboard':
             return None
         else:
-            return  mir_eval.io.load_labeled_intervals(self._tracks[track_id].chords_path)
+            path = self._tracks[track_id].chords_path
+            path = path.replace("'","_")  # replace if necessary!
+            return  mir_eval.io.load_labeled_intervals(path)
 
 class MIRDatasetGUI():
     """A simple GUI to select songs from a dataset """
