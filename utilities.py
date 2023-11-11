@@ -21,8 +21,19 @@ def loadAnnotations(annotationpath):
     intervals, labels = mir_eval.io.load_labeled_intervals(annotationpath)
     return intervals, labels
 
-def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,vmin=0,vmax=0.5,cmap="Reds"):
-    img = librosa.display.specshow(chroma,x_coords=t.T,x_axis='time', y_axis='chroma', cmap=cmap, ax=ax,vmin=vmin, vmax=vmax)
+def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,type="crp",time="seconds"):
+    if time == "seconds":
+        x_coords = t
+        x_axis = "time"
+    else:
+        x_coords = None
+        x_axis = None
+        
+    if type=="crp":
+        img = librosa.display.specshow(chroma,x_coords=x_coords,x_axis=x_axis, y_axis='chroma', cmap="bwr", ax=ax,vmin=-np.max(chroma), vmax=np.max(chroma))
+    else:
+        img = librosa.display.specshow(chroma,x_coords=x_coords,x_axis=x_axis, y_axis='chroma', cmap="Reds", ax=ax,vmin=0, vmax=np.max(chroma))
+    
     if downbeats is not None:
         downbeats = [beat for beat in downbeats if t[0] <= beat <= t[-1]]
         ax.vlines(downbeats,-0.5,11.5,'k',linestyles='dashed',alpha=0.6)

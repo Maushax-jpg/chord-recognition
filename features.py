@@ -3,7 +3,6 @@ import librosa
 import madmom.features
 from scipy.fftpack import dct,idct
 from scipy.signal import find_peaks
-import itertools
 
 def rms(y,hop_length=1024):
     """compute RMS value from mono audio signal"""

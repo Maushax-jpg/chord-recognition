@@ -66,6 +66,50 @@ def transcribeHMM(t_chroma,chroma,rms,p=0.1,template_type="majmin"):
     est_intervals,est_labels = utilities.createChordIntervals(t_chroma,labels_HMM)   
     return est_intervals,est_labels
 
+
+def recurrencySmoothing(chroma,M=5,theta=40):
+    """Chromagram smoothing using recurrency plot calculated from an embedded chromagram sequence
+        M ... embedding factor
+        neighbours .. parameter for adaptive Thresholding 
+    """
+    if chroma.shape[0] != 12:
+        raise ValueError(f"invalid chromagram shape!")
+    N = chroma.shape[1]
+    tiny = np.finfo(float).tiny
+    S = np.zeros((N-M+1,N-M+1),dtype=float) # self similarity matrix
+    for i in range(N-M+1):
+        c_1 = chroma[:,i:i+M].flatten() 
+        c_1_norm = c_1 / (np.linalg.norm(c_1)+tiny)
+        for col_index in range(N-M+1):
+            # compute normalized embedded chromavector
+            c_2 = chroma[:,col_index:col_index+M].flatten() 
+            c_2_norm = c_2 / (np.linalg.norm(c_2)+tiny)
+            c_diff = (c_2_norm - c_1_norm)
+            S[i,col_index] = np.linalg.norm(c_diff) / 2
+
+    threshold = np.zeros((N,),dtype=float) # treshold for self similarity matrix
+    R = np.zeros_like(S)
+    for j in range(N-M+1):
+        s = S[:,j]
+        s = np.sort(s)[::-1]  # sort in ascending order
+        threshold[j] = s[theta]
+    for i in range(N-M+1):
+        for j in range(N-M+1):
+            if S[i,j] <= threshold[i] or S[i,j] <= threshold[j]:
+                R[i,j] = 1
+    W = (1-S) * R
+
+    chroma_smoothed = np.copy(chroma)
+    for n in range(N-M+1):
+        for m in range(M):
+            if n - m < 0:
+                chroma_smoothed[:,n] += np.sum(np.outer(W[:,0],chroma[:,n-m]),axis=0) / np.sum(W[:,0])
+            else:
+                chroma_smoothed[:,n] += np.sum(np.outer(W[:,n-m],chroma[:,n-m]),axis=0) / np.sum(W[:,n-m])
+    chroma_smoothed = chroma_smoothed / np.sum(np.abs(chroma_smoothed)+np.finfo(float).eps,axis=0) # l1 normalization
+    return chroma_smoothed,W
+
+
 def uniform_transition_matrix(p=0.01, N=24):
     """Computes uniform transition matrix
     source: https://www.audiolabs-erlangen.de/resources/MIR/FMP/C5/C5S3_ChordRec_HMM.html
@@ -158,6 +202,10 @@ def transcribeChromagram(t_chroma,chroma,rms,**kwargs):
     if kwargs.get("prefilter",None) == "median":
         N = kwargs.get("prefilter_length",15)
         chroma = scipy.ndimage.median_filter(chroma, size=(1, N))
+    elif kwargs.get("prefilter",None) == "rp":
+        M = kwargs.get("embedding",5)
+        theta = kwargs.get("neighbours",40)
+        chroma,_ = recurrencySmoothing(chroma,M,theta)
     ## pattern matching ##         
     vocabulary = kwargs.get("vocabulary","majmin")
     templates,labels = utilities.createChordTemplates(template_type=vocabulary) 
