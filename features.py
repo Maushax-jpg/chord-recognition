@@ -1,91 +1,41 @@
 import numpy as np
-import mir_eval
-import madmom
-import os
 import librosa
-import scipy 
-from utils import buffer
+import madmom
 from scipy.fftpack import dct,idct
+from scipy.signal import find_peaks
 
-class FeatureProcessor():
-    def __init__(self,split_nr=0,basepath="/home/max/ET-TI/Masterarbeit/",sampling_rate=44100,hop_length=4410) -> None:
-        self._basepath = basepath
-        self._sampling_rate = sampling_rate
-        self._hop_length = hop_length
-        self._activations_processor = madmom.features.beats.RNNBeatProcessor()
-        self._beat_processor = madmom.features.beats.BeatTrackingProcessor(fps=100)
-        self._audio = None
+def rms(y,frame_length=2048,hop_length=512):
+    """compute RMS value from mono audio signal"""
+    rms_lin = librosa.feature.rms(y=y,hop_length=hop_length,frame_length=frame_length).flatten()
+    return np.clip(20*np.log10(rms_lin+np.finfo(float).tiny),-90,0)
 
-    def beats(self):
-        # beat estimation is not very stable for short time intervals
-        beat_activations = self._activations_processor(self._audio)
-        return self._beat_processor(beat_activations)
-
-    def alignChroma(self, chroma, beats, time_interval=(0,10),hop_length = None):
-        """smooth chromagram in between beats to create a beat aligned chroma"""
-        if hop_length is None:
-            hop_length = self._hop_length
-        chroma_aligned = np.copy(chroma)
-        # Calulate the number of frames within the time interval
-        num_frames = int((time_interval[1] - time_interval[0]) * self._sampling_rate / hop_length)
-        time_vector = np.linspace(time_interval[0], time_interval[1], num_frames, endpoint=False)
-
-        for b0,b1 in zip(beats[:-1],beats[1:]):
-            # find closest index in chroma vector
-            try:
-                idx0 = np.argwhere(time_vector >= b0)[0][0]
-            except IndexError:
-                # no matching interval found at array boundaries
-                idx1 = 0
-            try:
-                idx1 = np.argwhere(time_vector >= b1)[0][0]
-            except IndexError:
-                idx1 = time_vector.shape[0]  
-            # use non-local filtering
-            try:
-                chroma_filter = np.minimum(chroma_aligned[idx0:idx1,:],
-                                    librosa.decompose.nn_filter(chroma_aligned[idx0:idx1,:],
-                                    axis=0,
-                                    aggregate=np.median,
-                                    metric='cosine'))
-            except ValueError:
-                chroma_filter = chroma_aligned[idx0:idx1,:]
-            # apply horizontal median filter
-            chroma_aligned[idx0:idx1,:] = scipy.ndimage.median_filter(chroma_filter, size=(9, 1))
-        return chroma_aligned
-    
-    def rms(self,audiopath):
-        """calculate the root-mean-square value of the audiosignal"""
-        return madmom.audio.signal.root_mean_square(
-                madmom.audio.signal.FramedSignal(audiopath, norm=True, dtype=float, fps=10)
-        )     
-
-    def selectChroma(self,chroma,time_interval=(0,10),hop_length=None):
-        """select a time interval  of a precomputed chromagram"""
-        if hop_length is None:
-            hop_length = self._hop_length
-        selection = librosa.time_to_frames(time_interval,sr=self._sampling_rate,hop_length=hop_length)
-        idx = tuple([slice(*list(selection)),slice(None)])
-        chroma_selection = np.copy(chroma[idx])
-        time_vector = np.round(np.linspace(time_interval[0], time_interval[1], chroma_selection.shape[0], endpoint=False),1)
-        return time_vector,chroma_selection
-    
-    def selectBeats(self,beats,time_interval):
-        # select beats in appropriate time interval
-        selected = []
-        for x in beats:
-            if x >= time_interval[0] and x <= time_interval[1]:
-                selected.append(x)
-        return np.array(selected)
-
-def clpChroma(y,fs=44100,hop_length=4410):
-        """generates a chromagram with techniques that reduce overtone influence"""
-        data = madmom.audio.signal.Signal(y,fs)
-        clp_processor = madmom.audio.chroma.CLPChromaProcessor(fps=fs//hop_length,norm=False)
-        chroma = clp_processor(data)
-        return chroma / (np.expand_dims(np.sum(chroma,axis=1), axis=1)+np.finfo(float).eps)
+def beats(signal,algorithm="ellis"):
+    """compute beat-activations from a madmom Signal""" 
+    if algorithm == "ellis":
+        tempo,beats = librosa.beat.beat_track(y=signal,units="time")
+        return beats,tempo
+    elif algorithm == "RNN":
+        activation_processor =  madmom.features.beats.RNNBeatProcessor()
+        tempo_processor =  madmom.features.beats.TempoEstimationProcessor(fps=100)
+        processor = madmom.features.beats.BeatTrackingProcessor(fps=100) 
+        activations = activation_processor(signal)
+        beats = processor(activations)
+        return beats,tempo
+    else:
+        activation_processor =  madmom.features.beats.RNNBeatProcessor(online=True, nn_files=[madmom.models.BEATS_LSTM[0]])
+        activations = activation_processor(signal)
+        # estimate the smallest beat in the signal (lag at first maximum of activation autocorrelation)
+        act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
+        act_xx = act_xx / np.max(act_xx)
+        peaks,_ = find_peaks(act_xx,prominence=0.01)
+        peaks,peak_params = find_peaks(activations,height=0.001,prominence=0.001,distance=peaks[0]//2)
+        beats = [p/100 for p in peaks]    # seconds
+        beat_activations = [activations[b] for b in peaks]
+        return beats,beat_activations
 
 def sumChromaDifferences(chroma):
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
     # rearange chroma vector
     cq_fifth = np.zeros_like(chroma,dtype=float)
     for q in range(12):
@@ -99,6 +49,8 @@ def sumChromaDifferences(chroma):
     return gamma
 
 def negativeSlope(chroma):
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
     KSPARSE = 0.038461538461538464 # normalization constant
     gamma = np.zeros(chroma.shape[0],dtype=float)
     for t in range(chroma.shape[0]):
@@ -113,23 +65,32 @@ def negativeSlope(chroma):
 def shannonEntropy(chroma):
     """calculates the Shannon entropy of a chromagram for every timestep. The chromavector is treated as a random variable."""
     if chroma.shape[1] != 12:
-        ax = 0
-    else:
-        ax = 1
-    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=ax)/np.log2(12)
+        raise ValueError("invalid Chromagram shape!")
+    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=1)/np.log2(12)
 
 def nonSparseness(chroma):
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
     norm_l1 = np.linalg.norm(chroma, ord=1,axis=1)
     norm_l2 = np.linalg.norm(chroma, ord=2,axis=1) + np.finfo(float).eps
     gamma = 1 - ((np.sqrt(12)-norm_l1/norm_l2) / (np.sqrt(12)-1))
     return gamma
 
 def flatness(chroma):
-    geometric_mean = np.product(chroma,axis=1)**(1/12)
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    geometric_mean = np.product(chroma + np.finfo(float).eps, axis=1)**(1/12)
     arithmetic_mean = np.sum(chroma,axis=1) / 12 + np.finfo(float).eps
     return geometric_mean/arithmetic_mean
 
+def standardDeviation(chroma):
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    return np.std(chroma,axis=1)
+
 def angularDeviation(chroma):
+    if chroma.shape[1] != 12:
+        raise ValueError("invalid Chromagram shape!")
     # rearange chroma vector in fifth
     cq_fifth = np.zeros_like(chroma,dtype=float)
     for q in range(12):
@@ -144,119 +105,138 @@ def intervalCategories(chroma):
     if chroma.shape[1] != 12:
         raise ValueError("invalid Chromagram shape!")
     interval_features = np.zeros((chroma.shape[0],6),dtype=float)
+
     for i in range(6):
-        for q in range(12):
-            interval_features[:,i] += chroma[:,q] * chroma[:,(q+i+1)%12]
+        rotated_chroma = np.roll(chroma, shift=i+1, axis=1)
+        interval_features[:, i] = np.sum(chroma * rotated_chroma, axis=1)
+        
     return interval_features
 
-def hpss(y,margin=1):
-    """Harmonic Percussive Source Separation  (Fitzgerald)
-    based on Fitzgerald, Derry, Driedger, Müller and Disch"""
-    return librosa.effects.harmonic(y=y, margin=margin)
+def cqt(y,fs=22050, hop_length=1024, midi_min=36, octaves=7,bins_per_octave=36):
+    estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
+    cqt = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midi_min),
+                        bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves, sr=fs, tuning=estimated_tuning,gamma=0))
+    time_vector = np.linspace(hop_length/fs,y.shape[0]/fs,cqt.shape[1])
+    return time_vector, cqt
 
-def crpChroma(y,nCRP=22, n=2**14,overlap=int(2**14 *0.75),cqt=True):
-    midi_note_start = 12
-    midi_note_stop = 120
+def cqtChroma(sig,fs=22050):
+    """CQT Chroma from a madmom signal
+        returns time_vector (T,)
+                chromagram  (T,12)
+    """
+    estimated_tuning = librosa.estimate_tuning(y=sig,sr=fs,bins_per_octave=36)
+    try:
+        chroma_cq = librosa.feature.chroma_cqt(y=sig, sr=fs,bins_per_octave=36,tuning=estimated_tuning)
+    except TypeError: # quick bugfix for a problem with regex compilation.. 
+        chroma_cq = librosa.feature.chroma_cqt(y=sig, sr=fs,bins_per_octave=36,tuning=estimated_tuning)
+    chroma_cq = chroma_cq / (np.sum(chroma_cq,axis=0)+np.finfo(float).eps)
+    t_chroma_cq = np.linspace(sig.start,sig.stop,chroma_cq.shape[1])
+    return t_chroma_cq,chroma_cq
 
-    if cqt: # use CQT for the pitchgram 
-        bins_per_octave = 36
-        octaves = 8
-        estimated_tuning = librosa.estimate_tuning(y=y,bins_per_octave=bins_per_octave)
-        C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midi_note_start),
-                            bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves, tuning=estimated_tuning,gamma=0))
+def logChroma(sig, fs=22050, hop_length=2048,midinote_start=12,midinote_stop=120,window=False,norm="l1",rms_thresholding=True):
+    bins_per_octave = 36
+    octaves = 8
+    y = np.array(sig.data)
+    estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
+    try: 
+        C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
+                            bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
+                            hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
+    except TypeError:
+       C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
+                                bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
+                                hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
 
-        # pick every third coefficient from oversampled cqt
-        pitchgram_cqt = np.finfo(float).eps * np.ones((midi_note_stop,C.shape[1])) 
-        for note in range(midi_note_start,midi_note_stop):
-            try:
-                pitchgram_cqt[note,:] = C[(note-midi_note_start)*3,:]
-            except IndexError:
-                break
-        v = pitchgram_cqt ** 2
-    else: # use STFT with filterbank
-        k = np.arange(0,n//2 + 1)
-        fk = k*(fs/n)  # DFT-bin frequencies
-        midi_note_number_frequencies = 12* np.log2((fk/440)+np.finfo(float).eps)+69
+    # pick every third coefficient from oversampled and tuned cqt
+    pitchgram_cqt = np.finfo(float).eps * np.ones((midinote_stop,C.shape[1])) 
+    
+    # pitchgram window function
+    for note in range(midinote_start,midinote_stop):
+        try:
+            if window:
+                pitchgram_cqt[note,:] = np.exp(-(note-60)**2 / (2* 15**2)) * C[(note-midinote_start)*3,:]
+            else:
+                pitchgram_cqt[note,:] = C[(note-midinote_start)*3,:]
+        except IndexError:
+            break
+    vLog = np.log(1000 * pitchgram_cqt + 1);  
+    vLog = vLog.reshape(10,12,-1)
+    chroma_log = np.sum(vLog, axis=0)
+    if norm == "l1":
+        chroma_log = chroma_log /np.sum(np.abs(chroma_log)+np.finfo(float).eps,axis=0)
+    elif norm == "l2":
+        chroma_log = chroma_log / np.linalg.norm(chroma_log)
+    t = np.linspace(sig.start,sig.stop,chroma_log.shape[1])
+    return t,chroma_log
 
-        Hp = np.zeros((fk.shape[0],midi_note_stop - midi_note_start),dtype=float)
-        for i, midi_note_number in enumerate(range(midi_note_start,midi_note_stop)):
-            d = np.abs(midi_note_number - midi_note_number_frequencies)
-            Hp[:,i] = 0.5 * np.tanh(np.pi * (1 - 2*d)) + 0.5
+def crpChroma(sig, fs=22050, hop_length=2048, nCRP=55, midinote_start=12,midinote_stop=120,window=False,norm="l1",rms_thresholding=True):
+    """Chroma DCT-Reduced Log Pitch from an madmom signal
+        returns time_vector (T,)
+                chromagram  (T,12)
+    """
+    bins_per_octave = 36
+    octaves = 8
+    y = np.array(sig.data)
+    estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
+    try: 
+        C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
+                            bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
+                            hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
+    except TypeError:
+       C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midinote_start),filter_scale=1,
+                                bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
+                                hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
 
-        window = np.hanning(n)
-        y_blocks = buffer(y,n,overlap,0,window) 
-        weight = np.sum(window)
-        y_spectrum = (2/weight) * np.abs(np.fft.rfft(y_blocks,axis=0))
-        pitch_gram = np.matmul(Hp.T, y_spectrum) ** 2   # np.power(X,2) 
-
-        v = np.finfo(float).eps * np.ones((midi_note_stop,pitch_gram.shape[1]))
-        v[12:,:] = pitch_gram
-
+    # pick every third coefficient from oversampled and tuned cqt
+    pitchgram_cqt = np.finfo(float).eps * np.ones((midinote_stop,C.shape[1])) 
+    
+    # pitchgram window function
+    for note in range(midinote_start,midinote_stop):
+        try:
+            if window:
+                pitchgram_cqt[note,:] = np.exp(-(note-60)**2 / (2* 15**2)) * C[(note-midinote_start)*3,:]
+            else:
+                pitchgram_cqt[note,:] = C[(note-midinote_start)*3,:]
+        except IndexError:
+            break
+    v = pitchgram_cqt ** 2
+    
     vLog = np.log(100 * v + 1);  
     vLogDCT = dct(vLog, norm='ortho', axis=0);  
     vLogDCT[:nCRP,:] = 0  # liftering hochpass
     vLogDCT[nCRP,:] = 0.5 * vLogDCT[nCRP,:]
 
-    vLog_lift = idct(vLogDCT, norm='ortho', axis=0)
-    vLift = 1/100 * (np.exp(vLog_lift)-1); 
+    vLift = idct(vLogDCT, norm='ortho', axis=0)
     crp = vLift.reshape(10,12,-1)
-    crp = np.maximum(0, np.sum(crp, axis=0))
-    crp = crp / (np.sum(crp,axis=0)+np.finfo(float).eps)
-    return crp.T  # transpose it so it matches the other chroma types 
+    crp = np.sum(crp, axis=0)
 
-def deepChroma(y,split_nr=1):
-    path = f"/home/max/ET-TI/Masterarbeit/models/ismir2016/chroma_dnn_{split_nr}.pkl"
-    chroma_processor = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=[path])
-    chroma = chroma_processor(y)
-    chroma = chroma / np.expand_dims(np.sum(chroma,axis=1) + np.finfo(float).eps,axis=1)
-    return chroma
+    if rms_thresholding:
+        rms_values = rms(sig,frame_length=4096,hop_length=2048)
+        for i,x in enumerate(rms_values):
+            # threshold chroma values if energy is below -60dB
+            if x < -60:
+                crp[:,i]= -1 * np.ones((12,))
 
-def librosaChroma(y,fs=44100,hop_length=4096,hpss=True):
-    """generates a chromagram using harmonic/percussive seperation and the CQT transform """
-    # harmonic percussive sound separation
-    if hpss:
-        y_harm = librosa.effects.harmonic(y=y, margin=8)
+    if norm == "l1":
+        crp = crp /np.sum(np.abs(crp)+np.finfo(float).eps,axis=0)
+    elif norm == "l2":
+        crp = crp / np.linalg.norm(crp)
+    t = np.linspace(sig.start,sig.stop,crp.shape[1])
+    return t,crp
+
+def deepChroma(sig,split_nr=1):
+    """Deep Chroma from a madmom signal
+        returns time_vector (T,)
+                chromagram  (T,12)
+    """
+    model_path = [f"/home/max/ET-TI/Masterarbeit/models/ismir2016/chroma_dnn_{split_nr}.pkl"]
+    if split_nr is not None:
+        dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=model_path)
     else:
-        y_harm = y
-    # calculate chroma and transpose! shape: (t x 12)
-    chroma = librosa.feature.chroma_cqt(y=y_harm, sr=fs,hop_length=hop_length).T
-    return chroma / (np.expand_dims(np.sum(chroma,axis=1), axis=1)+np.finfo(float).eps)
+        dcp = madmom.audio.chroma.DeepChromaProcessor()
+    chroma = dcp(sig).T
+    timevector = np.linspace(sig.start,sig.stop,chroma.shape[1])
+    return timevector,chroma
 
-def RNN_beats(filepath):
-    activations_processor = madmom.features.beats.RNNBeatProcessor(online=True)
-    beat_processor = madmom.features.beats.BeatTrackingProcessor(fps=100)
-    return beat_processor(activations_processor(filepath))
-
-def alignChroma(chroma, beats, time_interval=(0,10),hop_length = 4410,sr=44100,filtering=False):
-    """smooth chromagram in between beats to create a beat aligned chroma"""
-    chroma_aligned = np.copy(chroma)
-    # Calulate the number of frames within the time interval
-    num_frames = int((time_interval[1] - time_interval[0]) * sr / hop_length)
-    time_vector = np.linspace(time_interval[0], time_interval[1], num_frames, endpoint=False)
-
-    for b0,b1 in zip(beats[:-1],beats[1:]):
-        # find closest index in chroma vector
-        try:
-            idx0 = np.argwhere(time_vector >= b0)[0][0]
-        except IndexError:
-            # no matching interval found at array boundaries
-            idx1 = 0
-        try:
-            idx1 = np.argwhere(time_vector >= b1)[0][0]
-        except IndexError:
-            idx1 = time_vector.shape[0]  
-        # use non-local filtering
-        if filtering:
-            try:
-                chroma_filter = np.minimum(chroma_aligned[idx0:idx1,:],
-                                    librosa.decompose.nn_filter(chroma_aligned[idx0:idx1,:],
-                                    axis=0,
-                                    aggregate=np.median,
-                                    metric='cosine'))
-            except ValueError:
-                chroma_filter = chroma_aligned[idx0:idx1,:]
-        else:
-            chroma_filter = chroma_aligned[idx0:idx1,:]
-        # apply horizontal median filter
-        chroma_aligned[idx0:idx1,:] = scipy.ndimage.median_filter(chroma_filter, size=(9, 1))
-    return chroma_aligned
+if __name__ == "__main__":
+    pass
