@@ -6,18 +6,32 @@ from abc import ABC, abstractmethod
 class Dataset(ABC):
     """Abstract class for a dataset"""
     @abstractmethod
-    def __getitem__(self, track_id):
-        """returns the audiopaths and chordannotations for the given Track_ID"""
-        pass
-
-    @abstractmethod
-    def getTrackList(self):
-        """returns a list of available Track_ID's for the dataset"""
+    def getFilePaths(self, track_id):
+        """getter method for audiopath and chord annotationspath"""
         pass
     @abstractmethod
     def getExperimentSplits(self,split_nr):
         """returns a list of available Track_ID's for the given Split"""
         pass
+
+    def __getitem__(self, track_id):
+        track = self._tracks.get(track_id, None)
+        if track is not None:
+            return self.getFilePaths(track)
+        else:
+            raise IndexError
+        
+    def getTrackList(self):
+        """returns a list of available Track_ID's for the dataset"""
+        return list(self._tracks.keys())
+    
+    def loadJsonFile(self, file_path):
+        try:
+            with open(file_path, 'r', encoding='UTF-8') as file:
+                return json.load(file)
+        except FileNotFoundError:
+            print(f"{file_path} file not found! Double-check the path.")
+            raise FileNotFoundError
 
 class RWDataset(Dataset):
     """Robbie Williams Dataset"""
@@ -25,24 +39,15 @@ class RWDataset(Dataset):
         self._hpss = hpss
         self._base_path = os.path.join(base_path,"robbiewilliams")
         self._tracks = {}
-        try:
-            with open(os.path.join(self._base_path,'index.json')) as json_file:
-                data = json.load(json_file)
-                for track in data["tracks"]:
-                    track_id,title,album,chords,keys,split = track.values()
-                    self._tracks[track_id] = customTrack(self._base_path,track_id,title,album,chords,keys,split)
-        except FileNotFoundError:
-            print(f"index.json file not found! Double check path")
-            raise FileNotFoundError
+        data = self.loadJsonFile(os.path.join(self._base_path,"index.json"))
+        for track in data["tracks"]:
+            track_id,title,album,chords,keys,split = track.values()
+            self._tracks[track_id] = customTrack(self._base_path,track_id,title,album,chords,keys,split)
         
-    def __getitem__(self,track_id):
-        track = self._tracks.get(track_id,None)
+    def getFilePaths(self,track):
         audiopath = track.audio_path
         annotationspath = track.chords_path
         return (audiopath,annotationspath)     
-    
-    def getTrackList(self):
-        return self._tracks.keys()
     
     def getExperimentSplits(self,split_nr):
         return [track_id for track_id,track in self._tracks.items() if track.split == split_nr]
@@ -54,23 +59,13 @@ class BeatlesDataset(Dataset):
         self._mirdata_beatles =  mirdata.initialize("beatles", data_home=self._base_path)
         self._tracks = self._mirdata_beatles.load_tracks()
 
-    def __getitem__(self,track_id):
-        track = self._tracks.get(track_id,None)
+    def getFilePaths(self,track):
         audiopath = track.audio_path
         annotationspath = track.chords_path
-        return (audiopath,annotationspath)     
-    
-    def getTrackList(self):
-        return self._tracks.keys()
+        return audiopath,annotationspath   
     
     def getExperimentSplits(self, split_nr):
-        try:
-            path = os.path.join(self._base_path,"splits",f"split_{split_nr}.json")
-            with open(path, 'r', encoding='UTF-8') as file:
-                track_list = json.load(file)
-        except FileNotFoundError:
-            print(f"split_{split_nr}.json file not found! Double check path")
-            quit()
+        track_list = self.loadJsonFile(os.path.join(self._base_path,"splits",f"split_{split_nr}.json"))
         return list(track_list.keys())
     
    
@@ -81,23 +76,13 @@ class RWCPopDataset(Dataset):
         self._mirdata_beatles =  mirdata.initialize("rwc_popular", data_home=self._base_path)
         self._tracks = self._mirdata_beatles.load_tracks()
 
-    def __getitem__(self,track_id):
-        track = self._tracks.get(track_id,None)
+    def getFilePaths(self,track):
         audiopath = track.audio_path.replace(".wav",".mp3")  # files are stored in mp3 format
         annotationspath = track.chords_path
-        return (audiopath,annotationspath)     
-    
-    def getTrackList(self):
-        return self._tracks.keys()
+        return audiopath,annotationspath     
     
     def getExperimentSplits(self, split_nr):
-        try:
-            path = os.path.join(self._base_path,"splits",f"split_{split_nr}.json")
-            with open(path, 'r', encoding='UTF-8') as file:
-                track_list = json.load(file)
-        except FileNotFoundError:
-            print(f"split_{split_nr}.json file not found! Double check path")
-            quit()
+        track_list = self.loadJsonFile(os.path.join(self._base_path,"splits",f"split_{split_nr}.json"))
         return list(track_list.keys())
     
 class QueenDataset(Dataset):
@@ -108,11 +93,10 @@ class QueenDataset(Dataset):
         self._tracks = self._mirdata_queen.load_tracks()
         self.removeTracks() # uncomment to use all available songs in this mirdata dataset 
 
-    def __getitem__(self,track_id):
-        track = self._tracks.get(track_id,None)
+    def getFilePaths(self,track):
         audiopath = track.audio_path
         annotationspath = track.chords_path
-        return (audiopath,annotationspath)     
+        return audiopath,annotationspath    
     
     def removeTracks(self):
         """function that removes Tracks without chord annotations from the dataset"""
@@ -122,26 +106,15 @@ class QueenDataset(Dataset):
                 remove.append(key)
         for key in remove:
             del self._tracks[key]
-
-    def getTrackList(self):
-        return self._tracks.keys()
     
     def getExperimentSplits(self, split_nr):
         track_ids = []
-        try:
-            with open(os.path.join(self._base_path,'index.json')) as json_file:
-                data = json.load(json_file)
-                for track in data["tracks"]:
-                    print(track,split_nr)
-                    track_id,title,album,split = track.values()
-                    print(type(split),type(split_nr))
-                    if split == split_nr:
-                        track_ids.append(track_id) 
-                return track_ids
-        except FileNotFoundError:
-            print(f"index.json file not found! Double check path")
-            raise FileNotFoundError
-
+        data = self.loadJsonFile(os.path.join(self._base_path,'index.json'))
+        for track in data["tracks"]:
+            track_id,title,album,split = track.values()
+            if split == split_nr:
+                track_ids.append(track_id) 
+        return track_ids
     
 class customTrack():
     """Class containing data for a track in a dataset (see mirdata.core.Track)"""
@@ -157,18 +130,44 @@ class customTrack():
     def __repr__(self):
         return f"Track(\naudio_path={self.audio_path}\nchords_path={self.chords_path}\nkeys_path={self.keys_path}\n)"
 
-if __name__ == "__main__":
-    ### DEMO ### 
-    PATH = "/home/max/ET-TI/Masterarbeit/mirdata/" # adjust path to data
-    dataset = BeatlesDataset(PATH)
-    # dataset = QueenDataset(PATH)
-    # dataset = RWCPopDataset(PATH)
-    # dataset = RWDataset(PATH)
+class Dataloader():
+    DATASETS = {
+        "beatles" : BeatlesDataset,
+        "rwc_popular" : RWCPopDataset,
+        "robbiewilliams" : RWDataset,
+        "queen" : QueenDataset
+    }
+    def __init__(self,dataset_name,base_path):
+        if dataset_name in self.DATASETS:
+            self._dataset = self.DATASETS[dataset_name](base_path)
+        else:
+            print(f"Dataset {dataset_name} is not implemented!")
+            raise NotImplementedError
+        
+    def __getitem__(self,track_id):
+        return self._dataset[track_id]
 
-    track_ids = dataset.getTrackList()
-    for track_id in track_ids:  # iterate over all available tracks
-        audiopath,annotations = dataset[track_id] 
-        print(audiopath)
-        # .. 
-        # load audio, load annotations
+    def getTrackList(self):
+        return self._dataset.getTrackList()
+    
+    def getExperimentSplits(self,split_nr):
+        return self._dataset.getExperimentSplits(split_nr)
+    
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(
+                    prog='dataloader DEMO',
+                    description='iterates over the dataset and prints out paths to audiofiles and ground truth annotations',
+                    epilog='Text at the bottom of help')
+    parser.add_argument('path',help='path to the mirdata basefolder')
+    parser.add_argument('name',default = "queen", help='name of the dataset: "beatles","robbiewilliams","queen" or "rwc_popular"')
+    args = parser.parse_args()
+    
+    dataset = Dataloader(args.name,args.path)
+
+    for track_id in dataset.getTrackList():
+        audiopath,chords_path = dataset[track_id] 
+        print(audiopath,chords_path)
+        # ..
+        # load files  etc.
         # .. 
