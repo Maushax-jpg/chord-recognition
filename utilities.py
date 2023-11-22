@@ -8,10 +8,7 @@ import madmom
 import pitchspace
 
 def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
-    try:
-        y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
-    except FileNotFoundError:
-        y, _ = madmom.io.audio.load_audio_file(audiopath.rsplit('.', 1)[0] + '.mp3', sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
+    y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
     sig = madmom.audio.signal.Signal(y, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop)
     sig = madmom.audio.signal.normalize(sig)
     timevector = np.linspace(sig.start,sig.stop,sig.num_samples)

@@ -9,7 +9,7 @@ class Dataset(ABC):
     def __getitem__(self, track_id):
         """returns the audiopaths and chordannotations for the given Track_ID"""
         pass
-    
+
     @abstractmethod
     def getTrackList(self):
         """returns a list of available Track_ID's for the dataset"""
@@ -20,7 +20,9 @@ class Dataset(ABC):
         pass
 
 class RWDataset(Dataset):
-    def __init__(self,base_path):
+    """Robbie Williams Dataset"""
+    def __init__(self,base_path,hpss=None):
+        self._hpss = hpss
         self._base_path = os.path.join(base_path,"robbiewilliams")
         self._tracks = {}
         try:
@@ -47,7 +49,7 @@ class RWDataset(Dataset):
     
 class BeatlesDataset(Dataset):
     """Wrapper class for mirdata 'beatles' dataset"""
-    def __init__(self,base_path):
+    def __init__(self,base_path,hpss=None):
         self._base_path = os.path.join(base_path,"beatles")
         self._mirdata_beatles =  mirdata.initialize("beatles", data_home=self._base_path)
         self._tracks = self._mirdata_beatles.load_tracks()
@@ -74,7 +76,7 @@ class BeatlesDataset(Dataset):
    
 class RWCPopDataset(Dataset):
     """Wrapper class for mirdata 'rwc_popular' dataset"""
-    def __init__(self,base_path):
+    def __init__(self,base_path,hpss=None):
         self._base_path = os.path.join(base_path,"rwc_popular")
         self._mirdata_beatles =  mirdata.initialize("rwc_popular", data_home=self._base_path)
         self._tracks = self._mirdata_beatles.load_tracks()
@@ -100,7 +102,7 @@ class RWCPopDataset(Dataset):
     
 class QueenDataset(Dataset):
     """Wrapper class for mirdata 'queen' dataset"""
-    def __init__(self,base_path):
+    def __init__(self,base_path,hpss=None):
         self._base_path = os.path.join(base_path,"queen")
         self._mirdata_queen =  mirdata.initialize("queen", data_home=self._base_path)
         self._tracks = self._mirdata_queen.load_tracks()

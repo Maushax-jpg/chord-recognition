@@ -169,7 +169,7 @@ def logChroma(sig, fs=22050, hop_length=2048,midinote_start=12,midinote_stop=120
     t = np.linspace(sig.start,sig.stop,chroma_log.shape[1])
     return t,chroma_log
 
-def crpChroma(sig, fs=22050, hop_length=2048, nCRP=55, midinote_start=12,midinote_stop=120,window=False,norm="l1",rms_thresholding=True):
+def crpChroma(sig, fs=22050, hop_length=2048, nCRP=55, midinote_start=12,midinote_stop=120,window=False,liftering=True,norm="l1",rms_thresholding=True):
     """Chroma DCT-Reduced Log Pitch from an madmom signal
         returns time_vector (T,)
                 chromagram  (T,12)
@@ -201,13 +201,15 @@ def crpChroma(sig, fs=22050, hop_length=2048, nCRP=55, midinote_start=12,midinot
             break
     v = pitchgram_cqt ** 2
     
-    vLog = np.log(100 * v + 1);  
-    vLogDCT = dct(vLog, norm='ortho', axis=0);  
-    vLogDCT[:nCRP,:] = 0  # liftering hochpass
-    vLogDCT[nCRP,:] = 0.5 * vLogDCT[nCRP,:]
+    vLog = np.log(1000 * v + 1);  
 
-    vLift = idct(vLogDCT, norm='ortho', axis=0)
-    crp = vLift.reshape(10,12,-1)
+    if liftering:
+        vLogDCT = dct(vLog, norm='ortho', axis=0);  
+        vLogDCT[:nCRP,:] = 0  # liftering hochpass
+        vLogDCT[nCRP,:] = 0.5 * vLogDCT[nCRP,:]
+
+        vLog = idct(vLogDCT, norm='ortho', axis=0)
+    crp = vLog.reshape(10,12,-1)
     crp = np.sum(crp, axis=0)
 
     if rms_thresholding:

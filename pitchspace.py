@@ -46,7 +46,6 @@ def sym3(n,g,n0):
     else:
         return None
 
-
 def angle_between(z1,z2):
     """compute shortest angle difference between two complex numbers"""
     diff = np.abs(np.angle(z1) - np.angle(z2))
@@ -344,6 +343,7 @@ def plotCircleF(ax):
         rho_F = np.exp(-1j*2*np.pi*(n_f/84))*1j
         ax.plot(rho_F.real,rho_F.imag,'o',color='k',markersize=3)
         drawLabel(ax,rho_F,pitch_class.name)
+        
     ax.text(-1.1,1,"F",fontsize=10,horizontalalignment='center')
     ax.axis('off')
 
@@ -352,6 +352,7 @@ def plotCircleFR(ax,pitch_class_index=0):
     n_k = pitch_classes[pitch_class_index].num_accidentals
     ax.text(-1.1,1.2,f"FR({pitch_classes[pitch_class_index].name})",fontsize=8,
               horizontalalignment='center',verticalalignment='center')
+    ax.axline((0, -.8), (0, .8),linestyle="--",color="grey",alpha=0.5)
     for pitch_class in pitch_classes:
         n_f = sym3(49*pitch_class.chromatic_index,84,7*n_k)
         # check if pitch is in fifth related circle
@@ -384,6 +385,7 @@ def plotCircleTR(ax,pitch_class_index=0,alterations=True):
             n_tr_sharp = sym(n_f_sharp-7*n_k-12,24)
             r_tr_sharp = np.exp(-1j*2*np.pi*((n_tr_sharp)/24))*1j
             drawLabel(ax,r_tr_sharp,pitch_class.name)
+    ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
     ax.axis('off')
 
 def plotCircleDR(ax,pitch_class_index=0):
@@ -399,6 +401,7 @@ def plotCircleDR(ax,pitch_class_index=0):
             rho_DR = np.exp(-1j*2*np.pi*(n_dr/12))*1j
             ax.plot(rho_DR.real,rho_DR.imag,'ok',markersize=3)
             drawLabel(ax,rho_DR,pitch_class.name)          
+    ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
     ax.axis('off')
 
 
