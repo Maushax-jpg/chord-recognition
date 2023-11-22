@@ -1,101 +1,172 @@
 import os
-from torch.utils.data import Dataset
-import mir_eval
 import mirdata
 import json
-import ipywidgets
-import IPython.display
+from abc import ABC, abstractmethod
 
-class MIRDataset(Dataset):
-    """
-    Dataloader class for MIR Datasets. Available Datasets are "rwc_popular" and "beatles"
-    """
-    def __init__(self,name,basepath="/home/max/ET-TI/Masterarbeit/mirdata/",split_nr=1):
-        super().__init__()
-        self._path = basepath
-        self._split_nr = split_nr
-        self._name = name
-        self._dataset = self.loadDataset(name)
-        self._tracks = self._dataset.load_tracks()
-
-    def __len__(self):
-        """returns rows of dataframe"""
-        return len(self._dataset.track_ids)
-    
+class Dataset(ABC):
+    """Abstract class for a dataset"""
+    @abstractmethod
     def __getitem__(self, track_id):
-        target = self.getAnnotations(track_id)
-        audio_path = self._tracks[track_id].audio_path
-        # replace "' with _"
-        audio_path = audio_path.replace("'","_")
-        return audio_path, target
+        """returns the audiopaths and chordannotations for the given Track_ID"""
+        pass
     
-    def getTrackIDs(self):
-        """returns list of available track IDs that can be used to access the dataset tracks"""
-        return self._dataset.track_ids
-    
-    def getTitle(self,track_id):
-        return self._tracks[track_id].title
+    @abstractmethod
+    def getTrackList(self):
+        """returns a list of available Track_ID's for the dataset"""
+        pass
+    @abstractmethod
+    def getExperimentSplits(self,split_nr):
+        """returns a list of available Track_ID's for the given Split"""
+        pass
+
+class RWDataset(Dataset):
+    def __init__(self,base_path):
+        self._base_path = os.path.join(base_path,"robbiewilliams")
+        self._tracks = {}
+        try:
+            with open(os.path.join(self._base_path,'index.json')) as json_file:
+                data = json.load(json_file)
+                for track in data["tracks"]:
+                    track_id,title,album,chords,keys,split = track.values()
+                    self._tracks[track_id] = customTrack(self._base_path,track_id,title,album,chords,keys,split)
+        except FileNotFoundError:
+            print(f"index.json file not found! Double check path")
+            raise FileNotFoundError
+        
+    def __getitem__(self,track_id):
+        track = self._tracks.get(track_id,None)
+        audiopath = track.audio_path
+        annotationspath = track.chords_path
+        return (audiopath,annotationspath)     
     
     def getTrackList(self):
-        """returns list of available track names"""
-        with open(f"{self._path}{self._name}/splits/split_{self._split_nr}.json", 'r', encoding='UTF-8') as file:
-            track_list = json.load(file)
-        return track_list
-
-    def loadDataset(self,name):
-        return mirdata.initialize(name, data_home=os.path.join(self._path,name))
+        return self._tracks.keys()
     
-    def getAnnotations(self,track_id):
-        if self._name == 'billboard':
-            return None
-        else:
-            path = self._tracks[track_id].chords_path
-            path = path.replace("'","_")  # replace if necessary!
-            return  mir_eval.io.load_labeled_intervals(path)
+    def getExperimentSplits(self,split_nr):
+        return [track_id for track_id,track in self._tracks.items() if track.split == split_nr]
+    
+class BeatlesDataset(Dataset):
+    """Wrapper class for mirdata 'beatles' dataset"""
+    def __init__(self,base_path):
+        self._base_path = os.path.join(base_path,"beatles")
+        self._mirdata_beatles =  mirdata.initialize("beatles", data_home=self._base_path)
+        self._tracks = self._mirdata_beatles.load_tracks()
 
-class MIRDatasetGUI():
-    """A simple GUI to select songs from a dataset """
-    def __init__(self,path=""):
-        self.path = path
-        self.dataset = None
-        self.initializeGUI()
-        self.displayGUI()
+    def __getitem__(self,track_id):
+        track = self._tracks.get(track_id,None)
+        audiopath = track.audio_path
+        annotationspath = track.chords_path
+        return (audiopath,annotationspath)     
+    
+    def getTrackList(self):
+        return self._tracks.keys()
+    
+    def getExperimentSplits(self, split_nr):
+        try:
+            path = os.path.join(self._base_path,"splits",f"split_{split_nr}.json")
+            with open(path, 'r', encoding='UTF-8') as file:
+                track_list = json.load(file)
+        except FileNotFoundError:
+            print(f"split_{split_nr}.json file not found! Double check path")
+            quit()
+        return list(track_list.keys())
+    
+   
+class RWCPopDataset(Dataset):
+    """Wrapper class for mirdata 'rwc_popular' dataset"""
+    def __init__(self,base_path):
+        self._base_path = os.path.join(base_path,"rwc_popular")
+        self._mirdata_beatles =  mirdata.initialize("rwc_popular", data_home=self._base_path)
+        self._tracks = self._mirdata_beatles.load_tracks()
 
-    def initializeGUI(self):
-        self.output = ipywidgets.Output()
-        self.dropdown_dataset = ipywidgets.Dropdown(options=["beatles","rwc_popular"],value = "beatles",description='Dataset:',
-                                  layout=ipywidgets.Layout(width='20%'),disabled=False)
-        self.dropdown_split = ipywidgets.Dropdown(options=[1, 2, 3, 4, 5, 6, 7],value = 3,description='Split:',
-                                        layout=ipywidgets.Layout(width='15%'),disabled=False)
-        self.dropdown_id = ipywidgets.Dropdown(description='Track ID:',disabled=False,layout=ipywidgets.Layout(width='20%'))
-        self.textbox_track_id = ipywidgets.Text(description='',disabled=True)
-        self.button_load = ipywidgets.Button(description='Load Track')
-        self.selection = ipywidgets.HBox([self.dropdown_dataset,self.dropdown_split, self.dropdown_id,self.textbox_track_id, self.button_load])
+    def __getitem__(self,track_id):
+        track = self._tracks.get(track_id,None)
+        audiopath = track.audio_path.replace(".wav",".mp3")  # files are stored in mp3 format
+        annotationspath = track.chords_path
+        return (audiopath,annotationspath)     
+    
+    def getTrackList(self):
+        return self._tracks.keys()
+    
+    def getExperimentSplits(self, split_nr):
+        try:
+            path = os.path.join(self._base_path,"splits",f"split_{split_nr}.json")
+            with open(path, 'r', encoding='UTF-8') as file:
+                track_list = json.load(file)
+        except FileNotFoundError:
+            print(f"split_{split_nr}.json file not found! Double check path")
+            quit()
+        return list(track_list.keys())
+    
+class QueenDataset(Dataset):
+    """Wrapper class for mirdata 'queen' dataset"""
+    def __init__(self,base_path):
+        self._base_path = os.path.join(base_path,"queen")
+        self._mirdata_queen =  mirdata.initialize("queen", data_home=self._base_path)
+        self._tracks = self._mirdata_queen.load_tracks()
+        self.removeTracks() # uncomment to use all available songs in this mirdata dataset 
 
-        # register callback functions
-        self.dropdown_split.observe(self.update_dropdown_id_options, 'value')
-        self.dropdown_id.observe(self.update_selected_track_id, 'value')
-        self.update_dropdown_id_options()
-        self.update_selected_track_id()
-        
-    def update_dropdown_id_options(self,*args):
-        selected_split = self.dropdown_split.value
-        self.dataset = MIRDataset(self.dropdown_dataset.value,basepath=self.path, split_nr=selected_split)
-        self.dropdown_id.options = list(self.dataset.getTrackList().keys())
-        self.dropdown_id.value = list(self.dataset.getTrackList().keys())[0]
+    def __getitem__(self,track_id):
+        track = self._tracks.get(track_id,None)
+        audiopath = track.audio_path
+        annotationspath = track.chords_path
+        return (audiopath,annotationspath)     
+    
+    def removeTracks(self):
+        """function that removes Tracks without chord annotations from the dataset"""
+        remove = []
+        for key in self._tracks:
+            if self._tracks[key].chords_path == None:
+                remove.append(key)
+        for key in remove:
+            del self._tracks[key]
 
-    def update_selected_track_id(self,*args):
-        self.textbox_track_id.value = self.dataset.getTrackList()[self.dropdown_id.value]
+    def getTrackList(self):
+        return self._tracks.keys()
+    
+    def getExperimentSplits(self, split_nr):
+        track_ids = []
+        try:
+            with open(os.path.join(self._base_path,'index.json')) as json_file:
+                data = json.load(json_file)
+                for track in data["tracks"]:
+                    print(track,split_nr)
+                    track_id,title,album,split = track.values()
+                    print(type(split),type(split_nr))
+                    if split == split_nr:
+                        track_ids.append(track_id) 
+                return track_ids
+        except FileNotFoundError:
+            print(f"index.json file not found! Double check path")
+            raise FileNotFoundError
 
-    def on_control_change(self,change):  
-        # change some controls according to updates
-        pass
-        # plotData(range_slider.value,beat_alignment.value,chroma_type.value)
+    
+class customTrack():
+    """Class containing data for a track in a dataset (see mirdata.core.Track)"""
+    def __init__(self,basepath,track_id,title,album,chords,keys,split):
+        self.track_id = track_id
+        self.title = title
+        self.album = album
+        self.audio_path = f"{basepath}/audio/{album}/{title}.mp3"
+        self.chords_path = f"{basepath}/annotations/chords/{album}/{chords}"
+        self.keys_path = f"{basepath}/annotations/keys/{album}/{keys}"
+        self.split = split
 
-    def displayGUI(self):
-        IPython.display.display(self.selection,self.output)
+    def __repr__(self):
+        return f"Track(\naudio_path={self.audio_path}\nchords_path={self.chords_path}\nkeys_path={self.keys_path}\n)"
 
-    def getSelectedTrack(self):
-        target = self.dataset.getAnnotations(self.dropdown_id.value)
-        audio_path = self.dataset._tracks[self.dropdown_id.value].audio_path
-        return audio_path,target
+if __name__ == "__main__":
+    ### DEMO ### 
+    PATH = "/home/max/ET-TI/Masterarbeit/mirdata/" # adjust path to data
+    dataset = BeatlesDataset(PATH)
+    # dataset = QueenDataset(PATH)
+    # dataset = RWCPopDataset(PATH)
+    # dataset = RWDataset(PATH)
+
+    track_ids = dataset.getTrackList()
+    for track_id in track_ids:  # iterate over all available tracks
+        audiopath,annotations = dataset[track_id] 
+        print(audiopath)
+        # .. 
+        # load audio, load annotations
+        # .. 
