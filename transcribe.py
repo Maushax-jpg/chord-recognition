@@ -53,7 +53,7 @@ def transcribeWithTemplates(t_chroma,chroma,template_type="majmin"):
 def applyPrefilter(chroma,filter_type="median",filterlength=17):
     return scipy.ndimage.median_filter(chroma, size=(1, args.prefilter_params))
 
-def transcribeHMM(t_chroma,chroma,rms,p=0.1,template_type="majmin"):
+def transcribeHMM(t_chroma,chroma,p=0.1,template_type="majmin"):
     correlation,labels = computeTemplateCorrelation(chroma,template_type)
     # neglect negative values of the correlation
     correlation = np.clip(correlation,0,100)
@@ -197,7 +197,7 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
     mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
     return score,mean_seg_score
 
-def transcribeChromagram(t_chroma,chroma,rms,**kwargs):
+def transcribeChromagram(t_chroma,chroma,**kwargs):
     ## prefilter ## 
     if kwargs.get("prefilter",None) == "median":
         N = kwargs.get("prefilter_length",15)
@@ -223,7 +223,7 @@ def transcribeChromagram(t_chroma,chroma,rms,**kwargs):
         est_intervals,est_labels =  utilities.createChordIntervals(t_chroma,unfiltered_labels)
     elif postfilter == "hmm":
         p = kwargs.get("transition_prob",0.1)
-        est_intervals,est_labels = transcribeHMM(t_chroma,chroma,rms,p=p,template_type=vocabulary)
+        est_intervals,est_labels = transcribeHMM(t_chroma,chroma,p=p,template_type=vocabulary)
     return est_intervals, est_labels
 
 

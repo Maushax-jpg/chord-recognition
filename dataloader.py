@@ -20,7 +20,7 @@ class Dataset(ABC):
             return self.getFilePaths(track)
         else:
             raise IndexError
-        
+    
     def getTrackList(self):
         """returns a list of available Track_ID's for the dataset"""
         return list(self._tracks.keys())
@@ -60,8 +60,8 @@ class BeatlesDataset(Dataset):
         self._tracks = self._mirdata_beatles.load_tracks()
 
     def getFilePaths(self,track):
-        audiopath = track.audio_path
-        annotationspath = track.chords_path
+        audiopath = track.audio_path.replace("'","_") # files containing commas have been renamed
+        annotationspath = track.chords_path.replace("'","_")
         return audiopath,annotationspath   
     
     def getExperimentSplits(self, split_nr):
@@ -111,7 +111,7 @@ class QueenDataset(Dataset):
         track_ids = []
         data = self.loadJsonFile(os.path.join(self._base_path,'index.json'))
         for track in data["tracks"]:
-            track_id,title,album,split = track.values()
+            track_id,_,_,split = track.values()
             if split == split_nr:
                 track_ids.append(track_id) 
         return track_ids
@@ -147,6 +147,9 @@ class Dataloader():
     def __getitem__(self,track_id):
         return self._dataset[track_id]
 
+    def getTitle(self,track_id):
+        return self._dataset._tracks[track_id].title
+    
     def getTrackList(self):
         return self._dataset.getTrackList()
     
@@ -166,8 +169,9 @@ if __name__ == "__main__":
     dataset = Dataloader(args.name,args.path)
 
     for track_id in dataset.getTrackList():
+        print(dataset.getTitle(track_id))
         audiopath,chords_path = dataset[track_id] 
-        print(audiopath,chords_path)
+        
         # ..
         # load files  etc.
         # .. 
