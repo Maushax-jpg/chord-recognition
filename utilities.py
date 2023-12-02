@@ -6,8 +6,48 @@ import itertools
 import numpy as np
 import madmom
 import pitchspace
+import os.path
+from collections import namedtuple
 
-def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050):
+PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
+""" 
+    pitch_class_index : index of pitch class in chroma vector and list of pitch_classes
+    chromatic_index : index n_c for pitch class in pitch space 
+    num_accidentals : The number of accidentals n_k present in the key of this pitch class 
+"""
+
+pitch_classes = [
+            PitchClass("C",0,-2,0),
+            PitchClass("Db",1,-1,-5), # use enharmonic note with lowest accidentals (Db)! (C# has 7 crosses) 
+            PitchClass('D',2,0,2),
+            PitchClass("Eb",3,1,-3), 
+            PitchClass("E",4,2,4),
+            PitchClass("F",5,3,-1),
+            PitchClass("F#",6,4,6),
+            PitchClass("G",7,5,1),
+            PitchClass("Ab",8,-6,-4), # Ab
+            PitchClass("A",9,-5,3),
+            PitchClass("Bb",10,-4,-2), #Bb
+            PitchClass("B",11,-3,5)
+]
+"""A sorted list of Pitch classes: [C, C#/Db, .. , A#, B]"""
+
+enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#","G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
+
+
+def loadAudio(audiopath,t_start=0,t_stop=None,fs=22050,hpss=None):
+    """wrapper function that loads audio file using the madmom Signal class"""
+    if hpss is not None:
+        basepath,filename = os.path.split(audiopath)
+        filename = filename.rsplit('.', 1)[0]
+        if hpss == "harmonic":
+            audiopath = os.path.join(basepath,f"{filename}_harmonic.mp3")
+        elif hpss == "harmonic+drums":
+            audiopath = os.path.join(basepath,f"{filename}_harmonic+drums.mp3")
+        elif hpss == "harmonic+vocals":
+            audiopath = os.path.join(basepath,f"{filename}_harmonic+vocals.mp3")
+        else:
+            raise ValueError(f"Invalid separation argument: {hpss}")
     y, _ = madmom.io.audio.load_audio_file(audiopath, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop, dtype=float)
     sig = madmom.audio.signal.Signal(y, sample_rate=fs, num_channels=1, start=t_start, stop=t_stop)
     sig = madmom.audio.signal.normalize(sig)
@@ -31,7 +71,7 @@ def plotChromagram(ax,t,chroma, downbeats=None,upbeats=None,chroma_type="crp",ti
     elif chroma_type=="log":
         img = librosa.display.specshow(chroma,x_coords=x_coords,x_axis=x_axis, y_axis='chroma', cmap="Reds", ax=ax,vmin=np.min(chroma), vmax=np.max(chroma))
     else:
-        img = librosa.display.specshow(chroma,x_coords=x_coords,x_axis=x_axis, y_axis='chroma', cmap="Reds", ax=ax,vmin=0, vmax=np.max(chroma))
+        img = librosa.display.specshow(chroma,x_coords=x_coords,x_axis=x_axis, y_axis='chroma', cmap="Reds", ax=ax,vmin=0, vmax=0.5)
     
     if downbeats is not None:
         downbeats = [beat for beat in downbeats if t[0] <= beat <= t[-1]]
@@ -191,6 +231,24 @@ def createChordTemplates(template_type="majmin"):
     chord_labels.append("N")
     return templates,chord_labels
 
+def plotSSM(ax,time_vector,S,time_interval=None,cmap="viridis"):
+    if time_interval is not None:
+        index_start = np.where(time_vector >= time_interval[0])[0][0]
+        index_stop = np.where(time_vector > time_interval[1])[0][0]
+    else:
+        index_start = 0
+        index_stop = time_vector.shape[0]
+    ticks = np.linspace(0,index_stop-index_start,5)
+    ticklabels = np.linspace(time_vector[index_start],time_vector[index_stop],5,dtype=int)
+    img = librosa.display.specshow(S[index_start:index_stop,index_start:index_stop],ax=ax,cmap=cmap,vmax=1)
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(ticklabels)
+    ax.set_yticks(ticks)
+    ax.set_yticklabels(ticklabels)
+    ax.set_xlabel("Time in s")
+    ax.set_ylabel("Time in s")
+    return img
+
 def saveTranscriptionResults(output_path,name,t_chroma,chroma,est_intervals,est_labels,ref_intervals,ref_labels):
     # store transcription and save a preview
     if output_path is not None:
@@ -214,6 +272,83 @@ def saveTranscriptionResults(output_path,name,t_chroma,chroma,est_intervals,est_
         plt.savefig(f"{output_path}/chromagrams/{name}.pdf", dpi=600)
         plt.close()
     
+def plotHalftoneGrid(axis,n_ht):
+    axis.plot([-1,1], [0,0], color='grey',linestyle=(0,(5,10)),linewidth=1)
+    axis.plot([0,0], [-1,1], color='grey',linestyle=(0,(5,10)),linewidth=1)
+    for i in np.linspace(0,n_ht,n_ht+1):
+        ht = np.exp(-1j*2*np.pi*(i/n_ht))*1j
+        axis.plot(ht.real,ht.imag,'o',color='grey',markersize=1.5)
 
-def saveTranscriptionParameters(**kwargs):
-    pass
+def drawLabel(axis,z,note_label,radius = 1.15,fontsize=7):
+    x = z.real * radius
+    y = z.imag * radius
+    axis.text(x,y,note_label,rotation=np.arctan2(y,x)*180/np.pi-90,
+              fontsize=fontsize,horizontalalignment='center',verticalalignment='center')
+
+def plotCircleF(ax):
+    plotHalftoneGrid(ax,84)
+    for pitch_class in pitch_classes:
+        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,0)
+        rho_F = np.exp(-1j*2*np.pi*(n_f/84))*1j
+        ax.plot(rho_F.real,rho_F.imag,'o',color='k',markersize=3)
+        drawLabel(ax,rho_F,pitch_class.name)
+        
+    ax.text(-1.1,1,"F",fontsize=10,horizontalalignment='center')
+    ax.axis('off')
+
+def plotCircleFR(ax,pitch_class_index=0):
+    plotHalftoneGrid(ax,48)
+    n_k = pitch_classes[pitch_class_index].num_accidentals
+    ax.text(-1.1,1.2,f"FR({pitch_classes[pitch_class_index].name})",fontsize=8,
+              horizontalalignment='center',verticalalignment='center')
+    ax.axline((0, -.8), (0, .8),linestyle="--",color="grey",alpha=0.5)
+    for pitch_class in pitch_classes:
+        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k)
+        # check if pitch is in fifth related circle
+        if -21 <= (n_f-7*n_k) <= 21:
+            n_fr = pitchspace.sym(n_f-7*n_k, 48)
+            rho_FR = np.exp(-1j*2*np.pi*(n_fr/48))*1j
+            ax.plot(rho_FR.real,rho_FR.imag,'ok',markersize=3)
+            drawLabel(ax,rho_FR,pitch_class.name)
+    ax.axis('off')
+
+def plotCircleTR(ax,pitch_class_index=0,alterations=True):
+    plotHalftoneGrid(ax,24)
+    n_k = pitch_classes[pitch_class_index].num_accidentals
+    if alterations:
+        n_k_sharp = pitch_classes[(pitch_class_index-1)%12].num_accidentals
+
+    ax.text(-1.1,1.2,f"TR({pitch_classes[pitch_class_index].name})",fontsize=8,
+              horizontalalignment='center',verticalalignment='center')
+    for pitch_class in pitch_classes:
+        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k)
+        # check if pitch is in fifth related circle
+        if -21 <= (n_f-7*n_k) <= 21:
+            n_tr = pitchspace.sym(n_f-7*n_k-12,24)
+            rho_TR = np.exp(-1j*2*np.pi*((n_tr)/24))*1j
+            ax.plot(rho_TR.real,rho_TR.imag,'ok',markersize=3)
+            drawLabel(ax,rho_TR,pitch_class.name)
+            continue
+        if alterations:
+            n_f_sharp = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k_sharp)
+            n_tr_sharp = pitchspace.sym(n_f_sharp-7*n_k-12,24)
+            r_tr_sharp = np.exp(-1j*2*np.pi*((n_tr_sharp)/24))*1j
+            drawLabel(ax,r_tr_sharp,pitch_class.name)
+    ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
+    ax.axis('off')
+
+def plotCircleDR(ax,pitch_class_index=0):
+    plotHalftoneGrid(ax,12)
+    n_k = pitch_classes[pitch_class_index].num_accidentals
+    ax.text(-1.1,1.2,f"DR({pitch_classes[pitch_class_index].name})",fontsize=8,
+              horizontalalignment='center',verticalalignment='center')
+    for pitch_class in pitch_classes:
+        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k)
+        # check if pitch is in fifth related circle
+        if -21 <= (n_f-7*n_k) <= 21:
+            n_dr = pitchspace.sym(n_f-7*n_k,12)
+            rho_DR = np.exp(-1j*2*np.pi*(n_dr/12))*1j
+            ax.plot(rho_DR.real,rho_DR.imag,'ok',markersize=3)
+            drawLabel(ax,rho_DR,pitch_class.name)          
+    ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
+    ax.axis('off')
