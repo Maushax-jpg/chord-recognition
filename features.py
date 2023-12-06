@@ -3,35 +3,27 @@ import librosa
 import madmom
 from scipy.fftpack import dct,idct
 from scipy.signal import find_peaks
+from scipy.ndimage import median_filter
+import itertools
 
 def rms(y,frame_length=2048,hop_length=512):
     """compute RMS value from mono audio signal"""
     rms_lin = librosa.feature.rms(y=y,hop_length=hop_length,frame_length=frame_length).flatten()
     return np.clip(20*np.log10(rms_lin+np.finfo(float).tiny),-90,0)
 
-def beats(signal,algorithm="ellis"):
+def computeBeats(signal,algorithm="ellis"):
     """compute beat-activations from a madmom Signal""" 
     if algorithm == "ellis":
         tempo,beats = librosa.beat.beat_track(y=signal,units="time")
         return beats,tempo
     elif algorithm == "RNN":
         activation_processor =  madmom.features.beats.RNNBeatProcessor()
-        tempo_processor =  madmom.features.beats.TempoEstimationProcessor(fps=100)
         processor = madmom.features.beats.BeatTrackingProcessor(fps=100) 
         activations = activation_processor(signal)
         beats = processor(activations)
-        return beats,tempo
+        return beats,None
     else:
-        activation_processor =  madmom.features.beats.RNNBeatProcessor(online=True, nn_files=[madmom.models.BEATS_LSTM[0]])
-        activations = activation_processor(signal)
-        # estimate the smallest beat in the signal (lag at first maximum of activation autocorrelation)
-        act_xx = np.correlate(activations, activations, mode='full')[activations.shape[0]-1:]
-        act_xx = act_xx / np.max(act_xx)
-        peaks,_ = find_peaks(act_xx,prominence=0.01)
-        peaks,peak_params = find_peaks(activations,height=0.001,prominence=0.001,distance=peaks[0]//2)
-        beats = [p/100 for p in peaks]    # seconds
-        beat_activations = [activations[b] for b in peaks]
-        return beats,beat_activations
+        raise ValueError("invalid algorithm!")
 
 def sumChromaDifferences(chroma):
     if chroma.shape[1] != 12:
@@ -119,16 +111,16 @@ def cqt(y,fs=22050, hop_length=1024, midi_min=36, octaves=7,bins_per_octave=36):
     time_vector = np.linspace(hop_length/fs,y.shape[0]/fs,cqt.shape[1])
     return time_vector, cqt
 
-def cqtChroma(sig,fs=22050,rms_thresholding=True):
+def cqtChroma(sig,fs=22050,hop_length=2048,rms_thresholding=True):
     """CQT Chroma from a madmom signal
         returns time_vector (T,)
                 chromagram  (T,12)
     """
     estimated_tuning = librosa.estimate_tuning(y=sig,sr=fs,bins_per_octave=36)
-    chroma_cq = librosa.feature.chroma_cqt(y=sig,hop_length=2048, sr=fs,bins_per_octave=36,tuning=estimated_tuning)
+    chroma_cq = librosa.feature.chroma_cqt(y=sig,hop_length=hop_length, sr=fs,bins_per_octave=36,tuning=estimated_tuning)
     chroma_cq = chroma_cq / (np.sum(chroma_cq,axis=0)+np.finfo(float).eps)
     if rms_thresholding:
-        rms_values = rms(sig,frame_length=4096,hop_length=2048)
+        rms_values = rms(sig,frame_length=4096,hop_length=hop_length)
         for i,x in enumerate(rms_values):
             # threshold chroma values if energy is below -60dB
             if x < -60:
@@ -200,6 +192,88 @@ def deepChroma(sig,split_nr=1):
     chroma = dcp(sig).T
     timevector = np.linspace(sig.start,sig.stop,chroma.shape[1])
     return timevector,chroma
+
+def computeSelfSimilarityMatrix(chroma,M=1,inner=False):
+    if chroma.shape[0] != 12: 
+        raise ValueError(f"Invalid chromagram of shape {x.shape}")
+    N = chroma.shape[1]
+    x = np.zeros((M*12,N)) # preallocate matrix of embedded chromavectors
+    if inner:
+        for i in range(0,N-M+1):
+            temp = chroma[:,i:i+M].flatten() # accumulate chromavectors
+            x[:,i] =  temp / (np.linalg.norm(temp)+np.finfo(float).tiny) # normalization
+        for i in range(1,M): # cosidering the last M samples
+            temp = chroma[:,N-M+i:N].flatten() # accumulate chromavectors
+            x[:temp.shape[0],N-M+i] =  temp / (np.linalg.norm(temp)+np.finfo(float).tiny) # normalization
+        S = np.abs(np.dot(x.T,x))
+    else:
+        S = np.zeros((N-M+1,N-M+1),dtype=float) # self similarity matrix
+        for i in range(N-M+1):
+            c_1 = chroma[:,i:i+M].flatten() 
+            c_1_norm = c_1 / (np.linalg.norm(c_1)+np.finfo(float).tiny)
+            for col_index in range(N-M+1):
+                # compute normalized embedded chromavector
+                c_2 = chroma[:,col_index:col_index+M].flatten() 
+                c_2_norm = c_2 / (np.linalg.norm(c_2)+np.finfo(float).tiny)
+                c_diff = (c_2_norm - c_1_norm)
+                S[i,col_index] = np.linalg.norm(c_diff) / 2
+    return S
+
+def smoothChromagram(chroma,W,M=1):
+    """smooth chroma with weight matrix"""
+    chroma_smoothed = np.zeros_like(chroma)
+    for n in range(W.shape[0]):
+        for m in range(M):
+            temp = np.zeros((12,),dtype=float)
+            if n - m < 0:  
+                continue
+            for i in range(W.shape[0]):
+                temp += W[i,n - m] * chroma[:,i]
+            chroma_smoothed[:,n] += temp / (np.sum(W[:,n - m])+ np.finfo(float).eps)
+    chroma_smoothed[:,W.shape[0]:chroma.shape[1]] = chroma[:,W.shape[0]:chroma.shape[1]]
+    chroma_smoothed = chroma_smoothed / np.sum(np.abs(chroma_smoothed)+np.finfo(float).eps,axis=0) # l1 normalization
+    return chroma_smoothed
+
+def computeWeightMatrix(chroma,M=15,Theta=50,inner=True):
+    """Weight matrix according to  Cho and Bello: A chroma smoothing method using recurrency plots"""
+    if inner: # use inner product
+        S =  1 - computeSelfSimilarityMatrix(chroma,M=1,inner=True) 
+        S_smoothed = 1 - computeSelfSimilarityMatrix(chroma,M=M,inner=True)
+    else:
+        S = computeSelfSimilarityMatrix(chroma,M=1,inner=False) 
+        S_smoothed = computeSelfSimilarityMatrix(chroma,M=M,inner=False)
+        
+    thresholds = np.zeros((S_smoothed.shape[0],),dtype=float) # treshold for self similarity matrix
+    for j in range(S_smoothed.shape[0]):
+        thresholds[j] = np.sort(S_smoothed[j,:])[Theta] # the Theta most similar values are included in the threshold
+    threshold_matrix = np.tile(thresholds, (S_smoothed.shape[0], 1)) # stack thresholds to a matrix
+
+    # compute recurrence plot
+    R = np.diag(np.ones(S.shape[0],))
+    R[:S_smoothed.shape[0],:S_smoothed.shape[0]] = S_smoothed < threshold_matrix
+    W = (1-S)*R
+    return W
+
+def applyPrefilter(sig,t_chroma,chroma,filter_type="median",**kwargs):
+    if filter_type == "median":
+        chroma_smoothed = median_filter(chroma, size=(1, kwargs.get("N",14)))
+    elif filter_type == "beat_aligned":
+        chroma_smoothed = np.zeros_like(chroma)
+
+        beats,_ = computeBeats(sig,algorithm=kwargs.get("algorithm","ellis"))
+        beat_index = []
+        for beat in beats:
+            beat_index.append(np.argwhere(beat <= t_chroma)[0][0])
+        for i_start,i_stop in itertools.pairwise(beat_index):
+            temp = np.median(chroma[:,i_start:i_stop],axis=1, keepdims=True)
+            chroma_smoothed[:,i_start:i_stop] = np.broadcast_to(temp,(12,i_stop-i_start))
+
+    elif filter_type == "rp":
+        W = computeWeightMatrix(chroma,M=kwargs.get("M",25),Theta=kwargs.get("neighbors",50))
+        chroma_smoothed = smoothChromagram(chroma,W,M=1)
+    return chroma_smoothed
+
+
 
 if __name__ == "__main__":
     pass

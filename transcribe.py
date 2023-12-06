@@ -4,6 +4,7 @@ import utilities
 import scipy.ndimage
 import librosa
 import madmom
+import features
 
 def transcribeDeepChroma(t_chroma,chroma):
     chord_processor = madmom.features.chords.DeepChromaChordRecognitionProcessor()
@@ -199,13 +200,10 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
 
 def transcribeChromagram(t_chroma,chroma,**kwargs):
     ## prefilter ## 
-    if kwargs.get("prefilter",None) == "median":
-        N = kwargs.get("prefilter_length",15)
-        chroma = scipy.ndimage.median_filter(chroma, size=(1, N))
-    elif kwargs.get("prefilter",None) == "rp":
-        M = kwargs.get("embedding",5)
-        theta = kwargs.get("neighbours",40)
-        chroma,_ = recurrencySmoothing(chroma,M,theta)
+    prefilter_type = kwargs.get("prefilter",None)
+    if prefilter_type is not None:
+        chroma = features.applyPrefilter(None,t_chroma,chroma,prefilter_type)
+
     ## pattern matching ##         
     vocabulary = kwargs.get("vocabulary","majmin")
     templates,labels = utilities.createChordTemplates(template_type=vocabulary) 
