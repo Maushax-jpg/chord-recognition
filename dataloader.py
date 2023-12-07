@@ -35,8 +35,7 @@ class Dataset(ABC):
 
 class RWDataset(Dataset):
     """Robbie Williams Dataset"""
-    def __init__(self,base_path,hpss=None):
-        self._hpss = hpss
+    def __init__(self,base_path):
         self._base_path = os.path.join(base_path,"robbiewilliams")
         self._tracks = {}
         data = self.loadJsonFile(os.path.join(self._base_path,"index.json"))
@@ -54,7 +53,7 @@ class RWDataset(Dataset):
     
 class BeatlesDataset(Dataset):
     """Wrapper class for mirdata 'beatles' dataset"""
-    def __init__(self,base_path,hpss=None):
+    def __init__(self,base_path):
         self._base_path = os.path.join(base_path,"beatles")
         self._mirdata_beatles =  mirdata.initialize("beatles", data_home=self._base_path)
         self._tracks = self._mirdata_beatles.load_tracks()
@@ -71,7 +70,7 @@ class BeatlesDataset(Dataset):
    
 class RWCPopDataset(Dataset):
     """Wrapper class for mirdata 'rwc_popular' dataset"""
-    def __init__(self,base_path,hpss=None):
+    def __init__(self,base_path):
         self._base_path = os.path.join(base_path,"rwc_popular")
         self._mirdata_beatles =  mirdata.initialize("rwc_popular", data_home=self._base_path)
         self._tracks = self._mirdata_beatles.load_tracks()
@@ -87,7 +86,7 @@ class RWCPopDataset(Dataset):
     
 class QueenDataset(Dataset):
     """Wrapper class for mirdata 'queen' dataset"""
-    def __init__(self,base_path,hpss=None):
+    def __init__(self,base_path):
         self._base_path = os.path.join(base_path,"queen")
         self._mirdata_queen =  mirdata.initialize("queen", data_home=self._base_path)
         self._tracks = self._mirdata_queen.load_tracks()
@@ -133,19 +132,33 @@ class customTrack():
 class Dataloader():
     DATASETS = {
         "beatles" : BeatlesDataset,
-        "rwc_popular" : RWCPopDataset,
-        "robbiewilliams" : RWDataset,
+        "rwc_pop" : RWCPopDataset,
+        "rw" : RWDataset,
         "queen" : QueenDataset
     }
-    def __init__(self,dataset_name,base_path):
+    def __init__(self,dataset_name,base_path,source_separation):
         if dataset_name in self.DATASETS:
             self._dataset = self.DATASETS[dataset_name](base_path)
+            if source_separation in [None,"drums","vocals","both"]:
+                self._source_separation = source_separation
+            else:
+                raise ValueError(f"invalid source separation type: {source_separation}")
         else:
-            print(f"Dataset {dataset_name} is not implemented!")
-            raise NotImplementedError
+            raise NotImplementedError(f"Dataset {dataset_name} is not implemented!")
         
     def __getitem__(self,track_id):
-        return self._dataset[track_id]
+        audiopath,annotationpath = self._dataset[track_id]
+
+        if self._source_separation is not None: # modify audio_path
+            basepath,filename = os.path.split(audiopath)
+            filename = filename.rsplit('.', 1)[0]
+            if self._source_separation == "drums":
+                audiopath = os.path.join(basepath,f"{filename}_harmonic+vocals.mp3")
+            elif self._source_separation == "vocals":
+                audiopath = os.path.join(basepath,f"{filename}_harmonic+drums.mp3")
+            elif self._source_separation == "both":
+                audiopath = os.path.join(basepath,f"{filename}_harmonic.mp3")
+        return audiopath,annotationpath
 
     def getTitle(self,track_id):
         return self._dataset._tracks[track_id].title
@@ -163,10 +176,10 @@ if __name__ == "__main__":
                     description='iterates over the dataset and prints out paths to audiofiles and ground truth annotations',
                     epilog='Text at the bottom of help')
     parser.add_argument('path',help='path to the mirdata basefolder')
-    parser.add_argument('name',default = "queen", help='name of the dataset: "beatles","robbiewilliams","queen" or "rwc_popular"')
+    parser.add_argument('name',default = "queen", help='name of the dataset: "beatles","rw","queen" or "rwc_popular"')
     args = parser.parse_args()
     
-    dataset = Dataloader(args.name,args.path)
+    dataset = Dataloader(args.name,args.path,None)
 
     for track_id in dataset.getTrackList():
         print(dataset.getTitle(track_id))
