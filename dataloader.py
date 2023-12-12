@@ -1,7 +1,11 @@
 import os
+import ipywidgets
+import IPython.display
 import mirdata
 import json
+import utils,plots
 from abc import ABC, abstractmethod
+import h5py
 
 class Dataset(ABC):
     """Abstract class for a dataset"""
@@ -169,22 +173,155 @@ class Dataloader():
     def getExperimentSplits(self,split_nr):
         return self._dataset.getExperimentSplits(split_nr)
     
+class DatasetGUI():
+    """A simple GUI to select songs from a dataset """
+    def __init__(self,filepath=""):
+        self.path = filepath
+        self.current_figure = None
+        self.initializeGUI()
+
+    def initializeGUI(self):
+        self.output = ipywidgets.Output()
+        self.dropdown_resultfile = ipywidgets.Dropdown(options=self.getResultFilepaths(),
+                                            value = None,description='select resultfile:',
+                                            layout=ipywidgets.Layout(width='50%'),
+                                            disabled=False)
+        self.button_loadfile = ipywidgets.Button(description='Load File')
+
+        self.dropdown_dataset = ipywidgets.Dropdown(options=["beatles","rwc_pop","rw","queen"],
+                                            value = "beatles",description='Dataset:',
+                                            layout=ipywidgets.Layout(width='20%'),
+                                            disabled=False)
+        self.dropdown_id = ipywidgets.Dropdown(description='Track ID:',disabled=False,layout=ipywidgets.Layout(width='20%'))
+        self.textbox_track_id = ipywidgets.Text(description='',disabled=True)
+        self.button_load = ipywidgets.Button(description='Load Track')
+
+        self.filepaths = ipywidgets.HBox([self.dropdown_resultfile,self.button_loadfile])
+        self.selection = ipywidgets.HBox([self.dropdown_dataset, self.dropdown_id,self.textbox_track_id, self.button_load])
+        self.dataset = Dataloader(self.dropdown_dataset.value,base_path=os.path.join(self.path,"mirdata"), source_separation=None)
+
+        # register callback functions
+        self.button_loadfile.on_click(self.load_result_file)
+        self.dropdown_dataset.observe(self.update_dataset,'value')
+        self.dropdown_id.observe(self.update_selected_track_id, 'value')
+        self.button_load.on_click(self.load_track)
+        IPython.display.display(self.filepaths,self.output)
+        
+    def getResultFilepaths(self):
+        result_filepath = os.path.join(self.path,"results")
+        return os.listdir(result_filepath)
+
+    def load_result_file(self,*args):
+        if self.dropdown_resultfile.value is not None:
+            IPython.display.display(self.filepaths,self.selection,self.output,clear=True)
+            with self.output:
+                self.output.clear_output()
+                print("Loaded result file, select track_id")
+        else:
+            with self.output:
+                self.output.clear_output()
+                print("please select a result file")
+
+    def load_track(self,*args):
+        if self.dropdown_resultfile.value is not None:
+            IPython.display.display(self.filepaths,self.selection,self.output,clear=True)
+            with self.output:
+                self.output.clear_output()
+                if self.dropdown_id.value is not None:
+                    print(f"selected track { self.dropdown_id.value}")
+                    fpath = os.path.join(self.path,"results",self.dropdown_resultfile.value)
+                    with h5py.File(fpath, 'r') as file:
+                        data = file[f"/{self.dropdown_dataset.value}/{self.dropdown_id.value}"]
+                        chroma = data["chroma"]
+                        chroma_enhanced = data["chroma_enhanced"]
+                        est_intervals = data["est_intervals"]
+                        est_labels = [x.decode("utf-8") for x in data["est_labels"]]
+
+                        t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
+                        _,annotationpath =self.dataset[self.dropdown_id.value]
+                        ref_intervals,ref_labels = utils.loadChordAnnotations(annotationpath)
+                        self.current_fig = plots.plotResults(t_chroma,chroma_enhanced,chroma,ref_intervals,ref_labels,est_intervals,est_labels)
+                else:
+                    print("please select track id!")
+
+    def update_dataset(self,*args):
+        self.dataset = Dataloader(self.dropdown_dataset.value,base_path=os.path.join(self.path,"mirdata"), source_separation=None)
+        self.update_dropdown_id_options()        
+        self.update_selected_track_id()
+
+    def update_dropdown_id_options(self,*args):
+        self.dropdown_id.options = list(self.dataset.getTrackList())
+        self.dropdown_id.value = self.dropdown_id.options[0] # pick first song
+
+    def update_selected_track_id(self,*args):
+        self.textbox_track_id.value = self.dropdown_id.value
+
+
+        
+    def getSelectedTrack(self):
+        # target = self.dataset.getAnnotations(self.dropdown_id.value)
+        # audio_path = self.dataset._tracks[self.dropdown_id.value].audio_path
+        # return audio_path,target
+        return None
+
 if __name__ == "__main__":
+
     import argparse
+    import matplotlib.pyplot as plt
+    import utils
+    import numpy as np
+    import mir_eval
+
     parser = argparse.ArgumentParser(
                     prog='dataloader DEMO',
-                    description='iterates over the dataset and prints out paths to audiofiles and ground truth annotations',
-                    epilog='Text at the bottom of help')
+                    description='iterates over available datasets and creates figures that describe the dataset')
     parser.add_argument('path',help='path to the mirdata basefolder')
-    parser.add_argument('name',default = "queen", help='name of the dataset: "beatles","rw","queen" or "rwc_popular"')
     args = parser.parse_args()
-    
-    dataset = Dataloader(args.name,args.path,None)
 
-    for track_id in dataset.getTrackList():
-        print(dataset.getTitle(track_id))
-        audiopath,chords_path = dataset[track_id] 
-        
-        # ..
-        # load files  etc.
-        # .. 
+    get_quality = lambda x : mir_eval.chord.split(x)[1]  # extract the root invariant chord quality
+
+
+    chords = {}
+    for dset in ["beatles","rwc_pop","rw","queen"]:
+        dataset = Dataloader(dset,args.path,None)
+        #chords = {}   # temporary dict for chords in a dataset
+        for i in range(1,9):
+            for track_id in dataset.getExperimentSplits(i):    
+                audiopath,annotationpath = dataset[track_id]
+                # y = utils.loadAudiofile(audiopath)
+                intervals,labels = utils.loadChordAnnotations(annotationpath)
+                
+                # accumulate total chord duration
+                for interval,label in zip(intervals,labels):
+                    duration = chords.get(get_quality(label),0.0)
+                    duration += (interval[1]-interval[0])
+                    chords.update({get_quality(label):duration})
+        chords.update({"N":chords.pop("")}) # rename No Chord label
+
+    # compute total duration of audio in the dataset
+    total_duration_hours = np.sum([x for x in chords.values()]) / 3600
+    print(f"{dset} : {total_duration_hours:0.2f} hours of audio")
+
+    # sort chord apperance in descending order 
+    sorted_chords = sorted(chords.items(), key=lambda x:x[1],reverse=True)
+
+    # extract the seven most frequent chord qualities
+    nChords = 8
+    labels = [x[0] for x in sorted_chords][:nChords] 
+    labels.append("Others")
+    durations = [x[1] for x in sorted_chords]
+    durations_percent = durations / np.sum(durations) 
+    durations_percent[nChords] = np.sum(durations_percent[nChords:]) # accumulate values at the end of the list
+    durations_percent = durations_percent[:nChords+1] # crop list
+
+    labels_percent = [f"{100*x:0.1f}%" for x in durations_percent]
+
+    fig,ax = plt.subplots(figsize=(6,4))
+    rects = ax.bar(labels,durations_percent)
+    ax.bar_label(rects,labels_percent, label_type='edge')
+    ax.set_ylim(0,0.8)
+    ax.set_yticks([])
+    ax.set_ylabel("Chord appearance in %")
+    ax.set_xlabel("Root invariant chord quality")
+    fig.tight_layout()
+    plt.show()
