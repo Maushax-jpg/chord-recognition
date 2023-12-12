@@ -4,6 +4,8 @@ import itertools
 import numpy as np
 from collections import namedtuple
 import audioread.ffdec  # Use ffmpeg decoder
+import h5py
+import json
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 
@@ -88,8 +90,10 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
         comparisons = mir_eval.chord.triads(ref_labels, est_labels)
     elif scheme == "tetrads":
         comparisons = mir_eval.chord.tetrads(ref_labels, est_labels)
-    elif scheme == "majmin_sevenths":
-        comparisons = mir_eval.chord.tetrads(ref_labels, est_labels)
+    elif scheme == "sevenths":
+        comparisons = mir_eval.chord.sevenths(ref_labels, est_labels)
+    else:
+        raise ValueError(f"invalid evaluation scheme: {scheme}")
     score = round(mir_eval.chord.weighted_accuracy(comparisons, durations),2)
     mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
     return score,mean_seg_score
@@ -100,7 +104,7 @@ def createChordTemplates(template_type="majmin"):
         majmin: "maj","min"
         triads: "maj","min","dim","aug"
         triads_extended: "maj","min","dim","aug","sus2","sus4"
-        majmin_sevenths: "maj","min","maj7","7","min7"
+        sevenths: "maj","min","maj7","7","min7"
 
         returns templates,chord_labels
     """
@@ -110,7 +114,7 @@ def createChordTemplates(template_type="majmin"):
         quality = ["maj","min","dim","aug"]
     elif template_type == "triads_extended":    
         quality = ["maj","min","dim","aug","sus2","sus4"]
-    elif template_type == "majmin_sevenths":
+    elif template_type == "sevenths":
         quality = ["maj","min","maj7","7","min7"]
     templates = np.zeros((12,12*len(quality)+1),dtype=float)
     chord_labels = []
@@ -128,3 +132,18 @@ def createChordTemplates(template_type="majmin"):
         templates[i,chord_index] = -1/12
     chord_labels.append("N")
     return templates,chord_labels
+
+def load_f_scores(filepath,dataset,return_params=False):
+   """load f-scores for all tracks in a dataset from .hdf5 file specified by filepath """
+   with h5py.File(filepath, 'r') as file:
+      f_scores = []
+      for track_id in file[f"/{dataset}"]:   
+         track_data = file[f"/{dataset}/{track_id}"]
+         majmin_score,seg_score = track_data.attrs.get("majmin"),track_data.attrs.get("seg")
+         f_scores.append((2 * majmin_score * seg_score) / (majmin_score + seg_score))
+
+      if return_params:
+         params = json.loads(file['/parameters'][()])
+         return f_scores, params
+      else:
+         return f_scores
