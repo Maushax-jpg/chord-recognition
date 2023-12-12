@@ -27,10 +27,10 @@ def parse_arguments():
     parser.add_argument('--transcriber', choices=['template', 'madmom'], default='template', 
                         help='select template based Recognition or use madmoms deep Chroma processor'
                         )
-    parser.add_argument('--vocabulary', choices=['majmin', 'triads', 'triads_extended', 'majmin_sevenths'], 
+    parser.add_argument('--vocabulary', choices=['majmin', 'triads', 'triads_extended', 'sevenths'], 
                         default='majmin', help='select chord vocabulary'
                         )
-    parser.add_argument('--eval_scheme', choices=['majmin','majmin_sevenths'], default='majmin',
+    parser.add_argument('--eval_scheme', choices=['majmin','sevenths'], default='majmin',
                          help='Evaluation scheme'
                          )
     parser.add_argument('--source_separation', choices=['drums','vocals','both'], default=None,
@@ -79,14 +79,18 @@ def saveResults(group,track_id,scores={},track_data={}):
 if __name__ == "__main__":
 
     #### chord recognition experiment #### 
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S') 
     params = parse_arguments()
-    fpath = params["result_file"]+timestamp+".hdf5"
+    fpath = params["result_file"]+".hdf5"
     file = h5py.File(fpath, 'w')
     print(f"created file {fpath}")
     file.create_dataset('parameters', data=json.dumps(params))
 
-    for datasetname in params["dataset"]:
+    if isinstance(params["dataset"], list):
+        dataset_list = params["dataset"]
+    else:
+        dataset_list = [params["dataset"]]     
+       
+    for datasetname in dataset_list:
         dataset = dataloader.Dataloader(datasetname,base_path=params["dataset_path"],source_separation=params["source_separation"])
         grp = file.create_group(datasetname)
         for fold in range(1,9):
@@ -104,6 +108,7 @@ if __name__ == "__main__":
                 chroma = features.crpChroma(y,nCRP=33,liftering=True,window=False)
                 t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
                 
+
                 # apply prefilter
                 filter_type = params.get("prefilter")
                 chroma_smoothed = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
@@ -128,6 +133,7 @@ if __name__ == "__main__":
                 eval_scheme = params.get("eval_scheme")
                 score,seg_score = utils.evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,eval_scheme)
                 
+
                 # save results to file
                 scores = {"majmin":score,"seg":seg_score}
                 data = {"est_intervals":(est_intervals,{}),
