@@ -4,22 +4,34 @@ import h5py
 import os
 import plots
 import utils
-import numpy as np
+from collections import namedtuple
 
+trackdata = namedtuple('track','track_id name dataset majmin_wscr majmin_seg majmin_f sevenths_wscr sevenths_seg sevenths_f')
+"""named tuple to store track specific metadata"""
 
-def load_evaluation_scores(filepath):
+def load_results(filepath):
     """reads all scores in a .hdf5 file and returns a dictionary"""
+    results = []
     with  h5py.File(filepath,"r") as file:
         datasets = file.attrs.get("dataset")
         if datasets is None:
             raise KeyError("Corrupt File: No Metadata indicating used datasets available..")
-        for grp in datasets:
-            for subgrp in file[f"{grp}/"]:
-                subgrp = file[f"{grp}/{subgrp}"]
-                # print out metadata for track
-                for k,v in subgrp.attrs.items():
-                    print(k,v)
-
+        for grp_name in datasets:
+            for subgrp_name in file[f"{grp_name}/"]:
+                subgrp = file[f"{grp_name}/{subgrp_name}"]
+                results.append(trackdata( 
+                        track_id=subgrp_name,
+                        name=subgrp.attrs.get("name"),
+                        dataset=grp_name,
+                        majmin_wscr=subgrp.attrs.get("majmin_score"),
+                        majmin_seg=subgrp.attrs.get("majmin_segmentation"),
+                        majmin_f=subgrp.attrs.get("majmin_f"),
+                        sevenths_wscr=subgrp.attrs.get("sevenths_score"),
+                        sevenths_seg=subgrp.attrs.get("sevenths_segmentation"),
+                        sevenths_f=subgrp.attrs.get("sevenths_f")
+                    )
+                )
+    return results
 class hdf5GUI():
     """A simple ipython GUI to visualize data of a result file """
     def __init__(self,filepath=""):
