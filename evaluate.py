@@ -6,6 +6,20 @@ import plots
 import utils
 import numpy as np
 
+
+def load_evaluation_scores(filepath):
+    """reads all scores in a .hdf5 file and returns a dictionary"""
+    with  h5py.File(filepath,"r") as file:
+        datasets = file.attrs.get("dataset")
+        if datasets is None:
+            raise KeyError("Corrupt File: No Metadata indicating used datasets available..")
+        for grp in datasets:
+            for subgrp in file[f"{grp}/"]:
+                subgrp = file[f"{grp}/{subgrp}"]
+                # print out metadata for track
+                for k,v in subgrp.attrs.items():
+                    print(k,v)
+
 class hdf5GUI():
     """A simple ipython GUI to visualize data of a result file """
     def __init__(self,filepath=""):
@@ -17,7 +31,7 @@ class hdf5GUI():
     def initializeGUI(self):
         self.output = ipywidgets.Output()
         self.dropdown_resultfile = ipywidgets.Dropdown(options=os.listdir(self.path),
-                                            value = None,description='select resultfile:',
+                                            value = None,description='File:',
                                             layout=ipywidgets.Layout(width='50%'),
                                             disabled=False)
         self.button_loadfile = ipywidgets.Button(description='Load File')
@@ -88,15 +102,15 @@ class hdf5GUI():
                 chroma_prefiltered = subgrp.get("chroma_prefiltered")
                 ref_intervals = subgrp.get("ref_intervals")
                 ref_labels = subgrp.get("ref_labels")
-                # majmin_intervals = subgrp.get("majmin_intervals")
-                # majmin_labels = subgrp.get("majmin_labels")
-                # sevenths_intervals = subgrp.get("sevenths_intervals")
-                # sevenths_labels = subgrp.get("sevenths_labels")
+                majmin_intervals = subgrp.get("majmin_intervals")
+                majmin_labels = subgrp.get("majmin_labels")
+                sevenths_intervals = subgrp.get("sevenths_intervals")
+                sevenths_labels = subgrp.get("sevenths_labels")
                 # convert labels 
                 ref_labels = [x.decode("utf-8") for x in ref_labels]
-                # majmin_labels = [x.decode("utf-8") for x in majmin_labels]
-                # sevenths_labels = [x.decode("utf-8") for x in sevenths_labels]
-                plots.plotResults(t_chroma,chroma,chroma_prefiltered,ref_intervals,ref_labels,ref_intervals,ref_labels)
+                majmin_labels = [x.decode("utf-8") for x in majmin_labels]
+                sevenths_labels = [x.decode("utf-8") for x in sevenths_labels]
+                plots.plotResults(t_chroma,chroma,chroma_prefiltered,ref_intervals,ref_labels,majmin_intervals,majmin_labels)
 
     def update_dataset(self,*args):
         """callback function for dropdown_dataset"""
@@ -112,22 +126,3 @@ class hdf5GUI():
             self.textbox_track_id.value = str(self.dropdown_id.value)
         else:
             self.textbox_track_id.value = "None"
-
-
-if __name__ == "__main__":
-    test_path = "/home/max/ET-TI/Masterarbeit/chord-recognition/results/test.hdf5"
-    metadata= {"vocabulary":"majmin","algorithm":"template","prefilter":"median","postfilter":"hmm","datasets":["beatles","rw"]}
-    track_ids = ["1","2","3","4","5","6"]
-    chroma = np.zeros((12,100),dtype=float)
-    with h5py.File(test_path,"w") as file:
-        file.attrs.update(metadata)
-        for dset in metadata["datasets"]:
-            grp = file.create_group(dset)
-            for track_id in track_ids:
-                subgrp = grp.create_group(track_id)
-                subsubgrp = subgrp.create_dataset("chroma",data=chroma)
-                subsubgrp.attrs.create("nCRP",data=33)
-                subsubgrp.attrs.create("sampleRate",data=22050)
-                subsubgrp.attrs.create("hopSize",data=2048)
-                subsubgrp = subgrp.create_dataset("chroma_prefiltered",data=chroma)
-                subsubgrp.attrs.create("median_length",data=7)

@@ -35,7 +35,7 @@ def parse_arguments():
     parser.add_argument('--embedding', type=int, default=25, help='Embedding value')
     parser.add_argument('--neighbors', type=int, default=50, help='Neighbours value')
     parser.add_argument('--postfilter', choices=[None, 'hmm', 'median'], default='hmm', help='select Postfilter type')
-    parser.add_argument('--transition_prob', type=float, default=0.3, help='self-transition probability for a chord')
+    parser.add_argument('--transition_prob', type=float, default=0.2, help='self-transition probability for a chord')
     parser.add_argument('--postfilter_length', type=int, default=4, help='Postfilter length')
     args = parser.parse_args()
 
@@ -132,8 +132,9 @@ if __name__ == "__main__":
                     score,seg_score = utils.evaluateTranscription(intervals,labels,ref_intervals,ref_labels,alphabet)
                     metadata[f"{alphabet}_score"] = score
                     metadata[f"{alphabet}_segmentation"] = seg_score
-                    metadata[f"{alphabet}_f"] = (2*score*seg_score)/(score+seg_score)
-
+                    metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
+                    data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"})
+                    data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
                 # save results
                 saveResults(file,track_id,metadata,data,datasetname)
 
