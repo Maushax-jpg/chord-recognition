@@ -33,10 +33,9 @@ pitch_classes = [
 enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#","G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
 
 def loadAudiofile(filepath,fs=22050):
-    """load audio signal with ffmpeg decoder"""
+    """load audio signal"""
     try:
-        aro = audioread.ffdec.FFmpegAudioFile(filepath)
-        y,_ = librosa.load(aro,mono=True,sr=fs)
+        y,_ = librosa.load(filepath,mono=True,sr=fs)
         y = y / np.max(y) # normalize 
     except FileNotFoundError:
         raise FileNotFoundError(f"could not load file: {filepath}")
@@ -133,17 +132,3 @@ def createChordTemplates(template_type="majmin"):
     chord_labels.append("N")
     return templates,chord_labels
 
-def load_f_scores(filepath,dataset,return_params=False):
-   """load f-scores for all tracks in a dataset from .hdf5 file specified by filepath """
-   with h5py.File(filepath, 'r') as file:
-      f_scores = []
-      for track_id in file[f"/{dataset}"]:   
-         track_data = file[f"/{dataset}/{track_id}"]
-         majmin_score,seg_score = track_data.attrs.get("majmin"),track_data.attrs.get("seg")
-         f_scores.append((2 * majmin_score * seg_score) / (majmin_score + seg_score))
-
-      if return_params:
-         params = json.loads(file['/parameters'][()])
-         return f_scores, params
-      else:
-         return f_scores
