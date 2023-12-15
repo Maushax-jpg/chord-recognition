@@ -1,11 +1,9 @@
 import os
-import ipywidgets
-import IPython.display
 import mirdata
 import json
-import utils,plots
+import utils
 from abc import ABC, abstractmethod
-import h5py
+
 
 class Dataset(ABC):
     """Abstract class for a dataset"""
@@ -173,96 +171,7 @@ class Dataloader():
     def getExperimentSplits(self,split_nr):
         return self._dataset.getExperimentSplits(split_nr)
     
-class DatasetGUI():
-    """A simple GUI to select songs from a dataset """
-    def __init__(self,filepath=""):
-        self.path = filepath
-        self.current_figure = None
-        self.initializeGUI()
 
-    def initializeGUI(self):
-        self.output = ipywidgets.Output()
-        self.dropdown_resultfile = ipywidgets.Dropdown(options=self.getResultFilepaths(),
-                                            value = None,description='select resultfile:',
-                                            layout=ipywidgets.Layout(width='50%'),
-                                            disabled=False)
-        self.button_loadfile = ipywidgets.Button(description='Load File')
-
-        self.dropdown_dataset = ipywidgets.Dropdown(options=["beatles","rwc_pop","rw","queen"],
-                                            value = "beatles",description='Dataset:',
-                                            layout=ipywidgets.Layout(width='20%'),
-                                            disabled=False)
-        self.dropdown_id = ipywidgets.Dropdown(description='Track ID:',disabled=False,layout=ipywidgets.Layout(width='20%'))
-        self.textbox_track_id = ipywidgets.Text(description='',disabled=True)
-        self.button_load = ipywidgets.Button(description='Load Track')
-
-        self.filepaths = ipywidgets.HBox([self.dropdown_resultfile,self.button_loadfile])
-        self.selection = ipywidgets.HBox([self.dropdown_dataset, self.dropdown_id,self.textbox_track_id, self.button_load])
-        self.dataset = Dataloader(self.dropdown_dataset.value,base_path=os.path.join(self.path,"mirdata"), source_separation=None)
-
-        # register callback functions
-        self.button_loadfile.on_click(self.load_result_file)
-        self.dropdown_dataset.observe(self.update_dataset,'value')
-        self.dropdown_id.observe(self.update_selected_track_id, 'value')
-        self.button_load.on_click(self.load_track)
-        IPython.display.display(self.filepaths,self.output)
-        
-    def getResultFilepaths(self):
-        result_filepath = os.path.join(self.path,"results")
-        return os.listdir(result_filepath)
-
-    def load_result_file(self,*args):
-        if self.dropdown_resultfile.value is not None:
-            IPython.display.display(self.filepaths,self.selection,self.output,clear=True)
-            with self.output:
-                self.output.clear_output()
-                print("Loaded result file, select track_id")
-        else:
-            with self.output:
-                self.output.clear_output()
-                print("please select a result file")
-
-    def load_track(self,*args):
-        if self.dropdown_resultfile.value is not None:
-            IPython.display.display(self.filepaths,self.selection,self.output,clear=True)
-            with self.output:
-                self.output.clear_output()
-                if self.dropdown_id.value is not None:
-                    print(f"selected track { self.dropdown_id.value}")
-                    fpath = os.path.join(self.path,"results",self.dropdown_resultfile.value)
-                    with h5py.File(fpath, 'r') as file:
-                        data = file[f"/{self.dropdown_dataset.value}/{self.dropdown_id.value}"]
-                        chroma = data["chroma"]
-                        chroma_enhanced = data["chroma_enhanced"]
-                        est_intervals = data["est_intervals"]
-                        est_labels = [x.decode("utf-8") for x in data["est_labels"]]
-
-                        t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
-                        _,annotationpath =self.dataset[self.dropdown_id.value]
-                        ref_intervals,ref_labels = utils.loadChordAnnotations(annotationpath)
-                        self.current_fig = plots.plotResults(t_chroma,chroma_enhanced,chroma,ref_intervals,ref_labels,est_intervals,est_labels)
-                else:
-                    print("please select track id!")
-
-    def update_dataset(self,*args):
-        self.dataset = Dataloader(self.dropdown_dataset.value,base_path=os.path.join(self.path,"mirdata"), source_separation=None)
-        self.update_dropdown_id_options()        
-        self.update_selected_track_id()
-
-    def update_dropdown_id_options(self,*args):
-        self.dropdown_id.options = list(self.dataset.getTrackList())
-        self.dropdown_id.value = self.dropdown_id.options[0] # pick first song
-
-    def update_selected_track_id(self,*args):
-        self.textbox_track_id.value = self.dropdown_id.value
-
-
-        
-    def getSelectedTrack(self):
-        # target = self.dataset.getAnnotations(self.dropdown_id.value)
-        # audio_path = self.dataset._tracks[self.dropdown_id.value].audio_path
-        # return audio_path,target
-        return None
 
 if __name__ == "__main__":
 

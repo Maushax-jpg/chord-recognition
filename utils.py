@@ -3,9 +3,6 @@ import mir_eval
 import itertools
 import numpy as np
 from collections import namedtuple
-import audioread.ffdec  # Use ffmpeg decoder
-import h5py
-import json
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
 """ 

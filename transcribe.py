@@ -4,11 +4,8 @@ import dataloader
 import utils
 import features
 import numpy as np
-import plots
 import h5py
 from tqdm import tqdm
-from datetime import datetime
-import json
 
 def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
@@ -49,7 +46,6 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
     track_metadata: additional attributes for the track
     datasets:   a dictionary containing the datasets that need to be stored
                 e.g. track_data = {"dataset_1": (data,metadata)}
-
     """
     # create a subgroup for the track_id
     if parent_group is not None:
