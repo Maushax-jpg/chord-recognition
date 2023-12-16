@@ -6,6 +6,7 @@ import features
 import numpy as np
 import h5py
 from tqdm import tqdm
+import madmom
 
 def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
@@ -39,6 +40,23 @@ def parse_arguments():
     # Convert Namespace to dictionary
     return vars(args)
 
+def transcribeDeepChroma(y,fold,data,metadata):
+    chroma = features.deepChroma(y,fold)
+    chord_processor = madmom.features.chords.DeepChromaChordRecognitionProcessor()
+    estimations = chord_processor(chroma.T)
+    intervals = np.array([(x[0],x[1]) for x in estimations])
+    labels = [x[2] for x in estimations]
+    ## Evaluation ##
+    for alphabet in ["majmin","sevenths"]:
+        score,seg_score = utils.evaluateTranscription(intervals,labels,ref_intervals,ref_labels,alphabet)
+        metadata[f"{alphabet}_score"] = score
+        metadata[f"{alphabet}_segmentation"] = seg_score
+        metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
+        data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"}) # madmom only provides major/minor chord transcription
+        data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
+    return intervals,labels
+
+
 def saveResults(file,name,track_metadata,datasets,parent_group=None):
     """saves the results for a given track_id in hdf5 format
     file: hdf5 file handle 
@@ -65,6 +83,42 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
         for key,value in metadata.items():
             dset.attrs.create(str(key), value)
 
+def transcribeTemplate(y,data,metadata):
+    # compute chromagram
+    chroma_params = {"nCRP":33,"hop_length":2048,"fs":22050}
+    chroma = features.crpChroma(y,nCRP=33,liftering=True,window=False)
+    t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
+    data["chroma"] = (chroma,chroma_params)
+
+    # apply prefilter
+    filter_type = params.get("prefilter")
+    chroma_smoothed = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
+    
+    # apply RMS thresholding
+    rms_db = features.computeRMS(y)
+    chroma_smoothed[:,rms_db < -60] = -1/12
+    data["chroma_prefiltered"] = (chroma_smoothed,chroma_params)
+
+    for alphabet in ["majmin","sevenths"]:
+        ## pattern matching ##         
+        correlation,labels = features.computeCorrelation(chroma_smoothed,alphabet)
+        
+        ## postfilter ##
+        filter_type = params.get("postfilter")
+        correlation_smoothed = features.applyPostfilter(correlation,labels,filter_type,**params)
+        
+        ## decode correlation matrix
+        chord_sequence = [labels[i] for i in np.argmax(correlation_smoothed,axis=0)]    
+        intervals,labels = utils.createChordIntervals(t_chroma,chord_sequence)   
+
+        ## Evaluation ##
+        score,seg_score = utils.evaluateTranscription(intervals,labels,ref_intervals,ref_labels,alphabet)
+        metadata[f"{alphabet}_score"] = score
+        metadata[f"{alphabet}_segmentation"] = seg_score
+        metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
+        data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"})
+        data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
+    return 
 
 if __name__ == "__main__":
     params = parse_arguments()
@@ -80,13 +134,13 @@ if __name__ == "__main__":
         dataset_list = params["dataset"]
     else:
         dataset_list = [params["dataset"]]     
-       
+
     for datasetname in dataset_list:
         dataset = dataloader.Dataloader(datasetname,base_path=dataset_path,source_separation=params["source_separation"])
         file.create_group(datasetname)
         for fold in range(1,9):
             for track_id in tqdm(dataset.getExperimentSplits(fold),desc=f"fold {fold}/8"): 
-                metadata = {} # dictionary for additional track information is
+                metadata = {} # dictionary for additional track information
                 data = {} # dictionary for track related data and metadata
 
                 # Load audiofile and ground truth annotations
@@ -97,40 +151,10 @@ if __name__ == "__main__":
                 data["ref_intervals"] = (ref_intervals,{"info":"ground truth intervals"})
                 data["ref_labels"] = (ref_labels,{"info":"ground truth labels"})
 
-                # compute chromagram
-                chroma_params = {"nCRP":33,"hop_length":2048,"fs":22050}
-                chroma = features.crpChroma(y,nCRP=33,liftering=True,window=False)
-                t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
-                data["chroma"] = (chroma,chroma_params)
-
-                # apply prefilter
-                filter_type = params.get("prefilter")
-                chroma_smoothed = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
-                
-                # apply RMS thresholding
-                rms_db = features.computeRMS(y)
-                chroma_smoothed[:,rms_db < -60] = -1/12
-                data["chroma_prefiltered"] = (chroma_smoothed,chroma_params)
-
-                for alphabet in ["majmin","sevenths"]:
-                    ## pattern matching ##         
-                    correlation,labels = features.computeCorrelation(chroma_smoothed,alphabet)
-                    
-                    ## postfilter ##
-                    filter_type = params.get("postfilter")
-                    correlation_smoothed = features.applyPostfilter(correlation,labels,filter_type,**params)
-                    
-                    ## decode correlation matrix
-                    chord_sequence = [labels[i] for i in np.argmax(correlation_smoothed,axis=0)]    
-                    intervals,labels = utils.createChordIntervals(t_chroma,chord_sequence)   
-
-                    ## Evaluation ##
-                    score,seg_score = utils.evaluateTranscription(intervals,labels,ref_intervals,ref_labels,alphabet)
-                    metadata[f"{alphabet}_score"] = score
-                    metadata[f"{alphabet}_segmentation"] = seg_score
-                    metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
-                    data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"})
-                    data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
+                if params["transcriber"] == "template":
+                    transcribeTemplate(y,data,metadata)
+                elif params["transcriber"] == "madmom":
+                    transcribeDeepChroma(y,fold,data,metadata)
                 # save results
                 saveResults(file,track_id,metadata,data,datasetname)
 
