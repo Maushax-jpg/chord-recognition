@@ -1,6 +1,7 @@
 # DATASET
 mirdata/*
 results/*
+models/*
 .hdf5
 
 # Byte-compiled / optimized / DLL files
