@@ -68,7 +68,7 @@ def load_trackdata(filepath,track_id,dataset):
         sevenths_labels = [x.decode("utf-8") for x in subgrp.get("sevenths_labels")]
 
         # convert to numpy arrays and pack to tuples
-        chromadata = t_chroma,np.copy(chroma),np.copy(subgrp.get("chroma_prefiltered"))
+        chromadata = t_chroma,np.copy(chroma),np.copy(subgrp.get("chroma_prefiltered",chroma))
         ground_truth = np.copy(subgrp.get("ref_intervals")), ref_labels
         est_majmin = np.copy(subgrp.get("majmin_intervals")),majmin_labels
         est_sevenths = np.copy(subgrp.get("sevenths_intervals")), sevenths_labels
@@ -117,12 +117,17 @@ class hdf5GUI():
         self.dropdown_id.observe(self.update_selected_track_id, 'value')
         self.button_plot.on_click(self.plot_results)
 
+        # display filepath selection only
         display(self.filepaths,self.output)
 
     def plot_results(self,*args):
+        # clear output
         display(self.filepaths,self.selection,self.output,clear=True)
-        track_data,chromadata,ground_truth,majmin_estimation,sevenths_estimation = self.trackdata
-        plots.plotResults(chromadata,ground_truth,majmin_estimation,sevenths_estimation,time_interval=(self.t_start_slider.value,self.t_start_slider.value+20)) 
+
+        # load trackdata and plot chromagram with annotations
+        plots.plotResults(self.chromadata,self.ground_truth,self.est_majmin,self.est_sevenths,
+                          time_interval=(self.t_start_slider.value,self.t_start_slider.value+20)
+                          ) 
 
 
     def load_result_file(self,*args):
@@ -133,7 +138,7 @@ class hdf5GUI():
         display(self.filepaths,self.selection,self.output,clear=True)
         self.output.clear_output()
         try:
-            self.trackdata,self.datasets = load_results(os.path.join(self.path,self.dropdown_resultfile.value))
+            self.trackdata_list,self.datasets = load_results(os.path.join(self.path,self.dropdown_resultfile.value))
             self.dropdown_dataset.options = self.datasets
             self.dropdown_dataset.value = self.dropdown_dataset.options[0]
             self.update_dataset() # updates all dropdown widgets
@@ -149,38 +154,37 @@ class hdf5GUI():
 
     def preview_result_file(self):
         """prints out an overview of the groups and subgroups of the loaded hdf5 file"""
-        majmin_f = [x.majmin_f for x in self.trackdata]
-        majmin_wscr =  [x.majmin_wscr for x in self.trackdata]
-        majmin_seg = [x.majmin_seg for x in self.trackdata]
-        sevenths_f = [x.sevenths_f for x in self.trackdata]
-        sevenths_wscr =  [x.sevenths_wscr for x in self.trackdata]
-        sevenths_seg = [x.sevenths_seg for x in self.trackdata]
+        majmin_f = [x.majmin_f for x in self.trackdata_list]
+        majmin_wscr =  [x.majmin_wscr for x in self.trackdata_list]
+        majmin_seg = [x.majmin_seg for x in self.trackdata_list]
+        sevenths_f = [x.sevenths_f for x in self.trackdata_list]
+        sevenths_wscr =  [x.sevenths_wscr for x in self.trackdata_list]
+        sevenths_seg = [x.sevenths_seg for x in self.trackdata_list]
         table_md = "# Evaluation Results on the combined dataset\n\n"
         table_md += "|eval-scheme| f-score| WSCR| Segmentation |\n| --- | --- |--- |--- |\n"
-        table_md += f"|majmin|{np.mean(majmin_f):0.2f}+/-{np.std(majmin_f):0.2f}|{np.mean(majmin_wscr):0.2f}+/-{np.std(majmin_wscr):0.2f}"
-        table_md += f"|{np.mean(majmin_seg):0.2f}+/-{np.std(majmin_seg):0.2f}|\n"
-        table_md += f"|sevenths|{np.mean(sevenths_f):0.2f}+/-{np.std(sevenths_f):0.2f}|{np.mean(sevenths_wscr):0.2f}+/-{np.std(sevenths_wscr):0.2f}"
-        table_md += f"|{np.mean(sevenths_seg):0.2f}+/-{np.std(sevenths_seg):0.2f}|\n"
+        table_md += f"|majmin|{100*np.mean(majmin_f):0.2f}+/-{100*np.std(majmin_f):0.2f}|{100*np.mean(majmin_wscr):0.2f}+/-{100*np.std(majmin_wscr):0.2f}"
+        table_md += f"|{100*np.mean(majmin_seg):0.2f}+/-{100*np.std(majmin_seg):0.2f}|\n"
+        table_md += f"|sevenths|{100*np.mean(sevenths_f):0.2f}+/-{100*np.std(sevenths_f):0.2f}|{100*np.mean(sevenths_wscr):0.2f}+/-{100*np.std(sevenths_wscr):0.2f}"
+        table_md += f"|{100*np.mean(sevenths_seg):0.2f}+/-{100*np.std(sevenths_seg):0.2f}|\n"
 
         with self.output:
             display(Markdown(table_md))
 
-    def display_trackdata(self,trackdata):
+    def display_trackdata(self):
         table_md = "|eval-scheme| f-score| WSCR| Segmentation |\n| --- | --- |--- |--- |\n"
-        table_md += f"|majmin|{trackdata.majmin_f:0.2f}|{trackdata.majmin_wscr:0.2f}|{trackdata.majmin_seg:0.2f}|\n"
-        table_md += f"|sevenths|{trackdata.sevenths_f:0.2f}|{trackdata.sevenths_wscr:0.2f}|{trackdata.sevenths_seg:0.2f}|\n"
+        table_md += f"|majmin|{100*self.trackdata.majmin_f:0.2f}|{100*self.trackdata.majmin_wscr:0.2f}|{100*self.trackdata.majmin_seg:0.2f}|\n"
+        table_md += f"|sevenths|{100*self.trackdata.sevenths_f:0.2f}|{100*self.trackdata.sevenths_wscr:0.2f}|{100*self.trackdata.sevenths_seg:0.2f}|\n"
         self.output.clear_output()
         with self.output:
             display(Markdown(table_md))
 
     def load_track(self):
         display(self.filepaths,self.selection,self.output,clear=True)
-        self.trackdata = load_trackdata(os.path.join(self.path,self.dropdown_resultfile.value),
+        self.trackdata,self.chromadata,self.ground_truth,self.est_majmin,self.est_sevenths = load_trackdata(os.path.join(self.path,self.dropdown_resultfile.value),
                                                                             self.dropdown_id.value,self.dropdown_dataset.value)
-        trackdata,chromadata,_,_,_ = self.trackdata
         # update t_max of slider 
-        self.t_start_slider.max = chromadata[0][-1]-15 # access track length via t_chroma from chromadata
-        self.display_trackdata(trackdata)
+        self.t_start_slider.max = self.chromadata[0][-1]-15 # access track length via t_chroma from chromadata
+        self.display_trackdata()
 
     def update_dataset(self,*args):
         """callback function for dropdown_dataset"""
@@ -188,12 +192,12 @@ class hdf5GUI():
         self.dropdown_id.value = None # set default track_id when changing dataset
 
     def update_dropdown_id_options(self,*args):
-        self.dropdown_id.options = [x.track_id for x in self.trackdata if x.dataset == self.dropdown_dataset.value]
+        self.dropdown_id.options = [x.track_id for x in self.trackdata_list if x.dataset == self.dropdown_dataset.value]
         self.update_selected_track_id()
 
     def update_selected_track_id(self,*args):
         if self.dropdown_id.value is not None:
             self.load_track()
-            self.textbox_name.value = self.trackdata[0].name
+            self.textbox_name.value = self.trackdata.name
         else:
             self.textbox_name.value = "None"

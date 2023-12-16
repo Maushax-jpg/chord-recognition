@@ -5,6 +5,7 @@ from scipy.ndimage import median_filter
 import utils
 import os
 import plots
+import madmom
 
 EPS = np.finfo(float).eps # machine epsilon
 
@@ -59,16 +60,14 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=55,eta=100,window=False,lifteri
 
     return crp
 
-def deepChroma(y,split_nr=1):
+def deepChroma(filepath,split_nr=1):
     """compute a chromagram with the deep chroma processor"""
-    import madmom
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    model_path =  os.path.join(script_directory,f"models/ismir2016/chroma_dnn_{split_nr}.pkl")
+    model_path =  os.path.join(os.path.split(__file__)[0],f"models/chroma_dnn_{split_nr}.pkl")
     if split_nr is not None:
-        dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=model_path)
+        dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=[model_path])
     else:
         dcp = madmom.audio.chroma.DeepChromaProcessor()
-    chroma = dcp(y).T
+    chroma = dcp(filepath).T
     return chroma
 
 def computeSSM(chroma,M=1):
