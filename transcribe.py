@@ -7,6 +7,7 @@ import numpy as np
 import h5py
 from tqdm import tqdm
 import madmom
+import madmom
 
 def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
@@ -92,7 +93,7 @@ def transcribeTemplate(y,data,metadata):
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
     data["chroma"] = (chroma,chroma_params)
 
-    # apply prefiltertr
+    # apply prefilter
     filter_type = params.get("prefilter")
     chroma_smoothed = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
     
