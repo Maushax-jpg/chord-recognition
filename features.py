@@ -4,7 +4,6 @@ from scipy.fftpack import dct,idct
 from scipy.ndimage import median_filter
 import utils
 import os
-import plots
 import madmom
 
 EPS = np.finfo(float).eps # machine epsilon
@@ -129,7 +128,7 @@ def applyPrefilter(t_chroma, chroma, filter_type,**params):
         THETA = params.get("neighbors",50)
         W,SSM,SSM_M = computeWeightMatrix(chroma,M=M,neighbors=THETA)
         if params.get("display",False):
-            plots.plotRecurrencePlots(t_chroma,W,SSM,SSM_M)
+            utils.plotRecurrencePlots(t_chroma,W,SSM,SSM_M)
         chroma_smoothed = np.zeros_like(chroma)
         for i in range(W.shape[0]):
             temp = np.zeros((12,),dtype=float)
