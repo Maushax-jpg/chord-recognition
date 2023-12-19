@@ -26,7 +26,7 @@ def parse_arguments():
     parser.add_argument('--transcriber', choices=['template', 'madmom'], default='template', 
                         help='select template based Recognition or use madmoms deep Chroma processor'
                         )
-    parser.add_argument('--chroma', choices=['CRP','Clog','CQT'], default='CRP', 
+    parser.add_argument('--chroma_type', choices=['CRP','Clog','CQT'], default='CRP', 
                         help='select chromagram type'
                         )
     parser.add_argument('--source_separation', choices=['drums','vocals','both'], default=None,
@@ -91,14 +91,18 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
 
 def transcribeTemplate(y,data,metadata,params):
     # compute chromagram
-    chroma_type = params.get("chroma")
+    chroma_type = params.get("chroma_type")
 
     chroma_params = {"hop_length":2048,"fs":22050,"type":chroma_type}
     if chroma_type == "CRP":
         chroma_params["nCRP"] = 33
-        chroma = features.crpChroma(y,nCRP=33,liftering=True,window=True)
+        chroma_params["eta"] = 100
+        chroma_params["window"] = True
+        chroma = features.crpChroma(y,nCRP=33,eta=100,liftering=True,window=True)
     elif chroma_type == "Clog":
-        chroma = features.crpChroma(y,liftering=False,window=True)
+        chroma_params["eta"] = 100
+        chroma_params["window"] = True
+        chroma = features.crpChroma(y,eta=100,liftering=False,window=True)
     else:
         chroma = features.crpChroma(y,liftering=False,compression=False,window=False)
 
@@ -117,7 +121,7 @@ def transcribeTemplate(y,data,metadata,params):
     for alphabet in ["majmin","sevenths"]:
         ## pattern matching ##         
         correlation,labels = features.computeCorrelation(chroma_smoothed,alphabet)
-        
+
         ## postfilter ##
         filter_type = params.get("postfilter")
         correlation_smoothed = features.applyPostfilter(correlation,labels,filter_type,**params)
@@ -125,14 +129,14 @@ def transcribeTemplate(y,data,metadata,params):
         ## decode correlation matrix
         chord_sequence = [labels[i] for i in np.argmax(correlation_smoothed,axis=0)]    
         intervals,labels = utils.createChordIntervals(t_chroma,chord_sequence)   
+        data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"})
+        data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
 
         ## Evaluation ##
         score,seg_score = utils.evaluateTranscription(intervals,labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
         metadata[f"{alphabet}_score"] = score
         metadata[f"{alphabet}_segmentation"] = seg_score
         metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
-        data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"})
-        data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
     return 
 
 if __name__ == "__main__":
@@ -172,6 +176,5 @@ if __name__ == "__main__":
                     transcribeDeepChroma(filepath,fold,data,metadata)
                 # save results
                 saveResults(file,track_id,metadata,data,datasetname)
-
     file.close()
     print(f"DONE")
