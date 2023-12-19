@@ -26,6 +26,9 @@ def parse_arguments():
     parser.add_argument('--transcriber', choices=['template', 'madmom'], default='template', 
                         help='select template based Recognition or use madmoms deep Chroma processor'
                         )
+    parser.add_argument('--chroma', choices=['CRP','Clog','CQT'], default='CRP', 
+                        help='select chromagram type'
+                        )
     parser.add_argument('--source_separation', choices=['drums','vocals','both'], default=None,
                          help='Select source separation type'
                          )
@@ -86,10 +89,19 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
         for key,value in metadata.items():
             dset.attrs.create(str(key), value)
 
-def transcribeTemplate(y,data,metadata):
+def transcribeTemplate(y,data,metadata,params):
     # compute chromagram
-    chroma_params = {"nCRP":33,"hop_length":2048,"fs":22050}
-    chroma = features.crpChroma(y,nCRP=33,liftering=True,window=False)
+    chroma_type = params.get("chroma")
+
+    chroma_params = {"hop_length":2048,"fs":22050,"type":chroma_type}
+    if chroma_type == "CRP":
+        chroma_params["nCRP"] = 33
+        chroma = features.crpChroma(y,nCRP=33,liftering=True,window=True)
+    elif chroma_type == "Clog":
+        chroma = features.crpChroma(y,liftering=False,window=True)
+    else:
+        chroma = features.crpChroma(y,liftering=False,compression=False,window=False)
+
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
     data["chroma"] = (chroma,chroma_params)
 
@@ -115,7 +127,7 @@ def transcribeTemplate(y,data,metadata):
         intervals,labels = utils.createChordIntervals(t_chroma,chord_sequence)   
 
         ## Evaluation ##
-        score,seg_score = utils.evaluateTranscription(intervals,labels,ref_intervals,ref_labels,alphabet)
+        score,seg_score = utils.evaluateTranscription(intervals,labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
         metadata[f"{alphabet}_score"] = score
         metadata[f"{alphabet}_segmentation"] = seg_score
         metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
@@ -155,7 +167,7 @@ if __name__ == "__main__":
 
                 if params["transcriber"] == "template":
                     y = utils.loadAudiofile(filepath)
-                    transcribeTemplate(y,data,metadata)
+                    transcribeTemplate(y,data,metadata,params)
                 elif params["transcriber"] == "madmom":
                     transcribeDeepChroma(filepath,fold,data,metadata)
                 # save results

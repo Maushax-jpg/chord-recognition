@@ -119,7 +119,7 @@ def createChordTemplates(template_type="majmin"):
     # create chord templates + No chord prototype
     for q in quality:  
         template = mir_eval.chord.quality_to_bitmap(q)
-        template = template / np.sum(template)
+        template = template / np.linalg.norm(template)
         for pitch in pitch_classes:
             templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")

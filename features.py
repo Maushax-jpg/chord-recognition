@@ -15,7 +15,7 @@ def computeRMS(y,fs=22050, hop_length=2048):
     rms = librosa.feature.rms(S=S,frame_length=4096,hop_length=hop_length)[0]
     return 20*np.log10(rms + EPS)
 
-def crpChroma(y, fs=22050, hop_length=2048, nCRP=55,eta=100,window=False,liftering=True,norm="l1"):
+def crpChroma(y, fs=22050, hop_length=2048, nCRP=55,eta=100,window=False,compression=True,liftering=True,norm="l1",clip=True):
     """compute Chroma DCT-Reduced Log Pitch feature from an audio signal"""
     bins_per_octave = 36
     octaves = 8
@@ -39,25 +39,26 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=55,eta=100,window=False,lifteri
             pitchgram_cqt[note - midi_start,:] = C[(note-midi_start)*3,:] 
 
     v = pitchgram_cqt ** 2
-    
-    vLog = np.log(eta * v + 1);  
+    if compression:
+        v = np.log(eta * v + 1);  
 
     if liftering:
-        vLogDCT = dct(vLog, norm='ortho', axis=0);  
+        vLogDCT = dct(v, norm='ortho', axis=0);  
         vLogDCT[:nCRP,:] = 0 
         vLogDCT[nCRP,:] = 0.5 * vLogDCT[nCRP,:]
-        vLog = idct(vLogDCT, norm='ortho', axis=0)
+        v = idct(vLogDCT, norm='ortho', axis=0)
 
     # pitch folding
-    crp = vLog.reshape(octaves,12,-1) 
+    crp = v.reshape(octaves,12,-1) 
     crp = np.sum(crp, axis=0)
-    crp = np.clip(crp,0,None) # clip negative values
+
+    if clip:
+        crp = np.clip(crp,0,None) # clip negative values
 
     if norm == "l1":
         crp = crp /np.sum(np.abs(crp) + EPS, axis=0)
     elif norm == "l2":
         crp = crp / np.linalg.norm(crp)
-
     return crp
 
 def deepChroma(filepath,split_nr=1):

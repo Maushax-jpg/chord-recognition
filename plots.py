@@ -35,6 +35,7 @@ def plotChordAnnotations(ax,intervals,labels,time_interval=(0,10),y_0=0):
     ax.set_xlim(time_interval)
 
 def plotResults(chromadata,ground_truth,majmin_estimation,sevenths_estimation,time_interval=(0,20)):   
+    
     t_chroma,chroma,chroma_prefiltered = chromadata  
     ref_intervals,ref_labels = ground_truth
     est_majmin_intervals,est_majmin_labels = majmin_estimation
