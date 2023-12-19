@@ -2,6 +2,8 @@ import librosa.display
 import mir_eval
 import itertools
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 from collections import namedtuple
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals')
@@ -129,3 +131,72 @@ def createChordTemplates(template_type="majmin"):
     chord_labels.append("N")
     return templates,chord_labels
 
+def getTimeIndices(timevector,time_interval):
+    i0 = 0
+    i1 = -1
+    if time_interval is not None:
+        if timevector.size > 0 and time_interval[0] <= timevector[-1]:
+            i0 = np.searchsorted(timevector, time_interval[0], side='left')
+            i1 = np.searchsorted(timevector, time_interval[1], side='left')
+
+            # Ensure i1 is within the bounds of the array
+            i1 = min(i1, timevector.shape[0] - 1)
+    return i0,i1
+
+def plotChromagram(ax,t_chroma,chroma,time_interval=None):
+    i0,i1 = getTimeIndices(t_chroma,time_interval)
+    img = librosa.display.specshow(chroma[:,i0:i1],x_coords=t_chroma[i0:i1],x_axis="time", y_axis='chroma', cmap="Reds", ax=ax,vmin=0, vmax=np.max(chroma[:,i0:i1]))
+    return img
+
+def plotCQT(ax,t_chroma,cqt,time_interval=None):
+    i0,i1 = getTimeIndices(t_chroma,time_interval)
+    img = librosa.display.specshow(cqt[:,i0:i1],x_coords=t_chroma[i0:i1],x_axis="time", y_axis='cqt', cmap="viridis", ax=ax,vmin=0, vmax=np.max(cqt[:,i0:i1]))
+    return img
+
+def plotCorrelation(ax,t_chroma,correlation,time_interval=None):
+    i0,i1 = getTimeIndices(t_chroma,time_interval)
+    img = librosa.display.specshow(correlation[:,i0:i1],x_coords=t_chroma[i0:i1],x_axis="time", y_axis='cqt', cmap="viridis", ax=ax,vmin=0, vmax=np.max(correlation[:,i0:i1]))
+    pass
+
+def plotChordAnnotations(ax,intervals,labels,time_interval=(0,10),y_0=0):
+    def getColor(chordlabel):
+        colors = ["lightblue","blue", "green", "red", "orange", "purple", "grey", "lightgreen","brown", "magenta", "teal","cyan","white"]
+        root,_,_ = mir_eval.chord.encode(chordlabel)
+        return colors[root]
+    for i,label in enumerate(labels):
+        # skip labels that do not overlap time interval 
+        if intervals[i,1] < time_interval[0] or intervals[i,0] > time_interval[1]:
+            continue
+        # set start position of rectangular patch
+        t_start = max(intervals[i,0],time_interval[0])
+        t_stop = min(intervals[i,1],time_interval[1])
+        rect = Rectangle((t_start, y_0),t_stop - t_start , 1.4, linewidth=1, edgecolor="k", facecolor=getColor(label))
+        ax.add_patch(rect)
+        if t_stop - t_start > 0.5:
+            ax.text(t_start+ (t_stop - t_start)/2, y_0 + 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=9, color='k')
+    ax.set_xlim(time_interval)
+
+def plotSSM(ax,time_vector,S,time_interval=None,cmap="viridis"):
+    if time_interval is not None:
+        index_start = np.where(time_vector >= time_interval[0])[0][0]
+        index_stop = np.where(time_vector > time_interval[1])[0][0]
+    else:
+        index_start = 0
+        index_stop = time_vector.shape[0]
+    ticks = np.linspace(0,index_stop-index_start,5)
+    ticklabels = np.linspace(time_vector[index_start],time_vector[index_stop],5,dtype=int)
+    img = librosa.display.specshow(S[index_start:index_stop,index_start:index_stop],ax=ax,cmap=cmap,vmax=1)
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(ticklabels)
+    ax.set_yticks(ticks)
+    ax.set_yticklabels(ticklabels)
+    ax.set_xlabel("Time in s")
+    ax.set_ylabel("Time in s")
+    return img
+
+def plotRecurrencePlots(t_chroma,W,SSM,SSM_M):
+    fig,(ax0,ax1,ax2) = plt.subplots(1,3,figsize=(9,2.6))
+    plotSSM(ax0,t_chroma,W,time_interval=(0,30))
+    plotSSM(ax1,t_chroma,SSM,time_interval=(0,30))
+    plotSSM(ax2,t_chroma,SSM_M,time_interval=(0,30))
+    return fig
