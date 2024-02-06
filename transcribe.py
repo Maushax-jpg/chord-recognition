@@ -29,7 +29,7 @@ def parse_arguments():
     parser.add_argument('--chroma_type', choices=['CRP','Clog','CQT'], default='CRP', 
                         help='select chromagram type'
                         )
-    parser.add_argument('--source_separation', choices=['drums','vocals','both'], default=None,
+    parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="none",
                          help='Select source separation type'
                          )
     parser.add_argument('--prefilter', choices=[None, 'median', 'rp'], default='median', help='Select Prefilter type')

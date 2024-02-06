@@ -9,10 +9,9 @@ class Dataset(ABC):
     """Abstract class for a dataset"""
     @abstractmethod
     def getFilePaths(self, track_id):
-
-        
         """getter method for audiopath and chord annotationspath"""
         pass
+
     @abstractmethod
     def getExperimentSplits(self,split_nr):
         """returns a list of available Track_ID's for the given Split"""
@@ -143,7 +142,7 @@ class Dataloader():
     def __init__(self,dataset_name,base_path,source_separation):
         if dataset_name in self.DATASETS:
             self._dataset = self.DATASETS[dataset_name](base_path)
-            if source_separation in [None,"drums","vocals","both"]:
+            if source_separation in ["none","drums","vocals","both"]:
                 self._source_separation = source_separation
             else:
                 raise ValueError(f"invalid source separation type: {source_separation}")
@@ -153,7 +152,7 @@ class Dataloader():
     def __getitem__(self,track_id):
         audiopath,annotationpath = self._dataset[track_id]
 
-        if self._source_separation is not None: # modify audio_path
+        if self._source_separation != "none": # modify audio_path
             basepath,filename = os.path.split(audiopath)
             filename = filename.rsplit('.', 1)[0]
             if self._source_separation == "drums":
