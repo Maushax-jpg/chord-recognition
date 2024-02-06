@@ -3,6 +3,8 @@ mirdata/*
 results/*
 models/*
 *.hdf5
+cpss.ipynb
+acr_evaluation.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
