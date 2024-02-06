@@ -8,6 +8,9 @@ from collections import namedtuple
 import matplotlib.pyplot as plt
 import mir_eval
 import librosa.display
+import pitchspace
+from scipy.stats import pearsonr
+
 
 trackdata = namedtuple('track','track_id name dataset majmin_wscr majmin_seg majmin_f sevenths_wscr sevenths_seg sevenths_f')
 """named tuple to store track specific metadata"""
@@ -41,7 +44,6 @@ def load_results(filepath):
                 )
     return results,datasets
 
-
 def load_trackdata(filepath,track_id,dataset):
     """reads out trackdata, chromagram and annotations for a given track from an .hdf5 file"""
     with h5py.File(filepath,"r") as file:
@@ -73,6 +75,7 @@ def load_trackdata(filepath,track_id,dataset):
         ground_truth = np.copy(subgrp.get("ref_intervals")), ref_labels
         est_majmin = np.copy(subgrp.get("majmin_intervals")),majmin_labels
         est_sevenths = np.copy(subgrp.get("sevenths_intervals")), sevenths_labels
+        #est_sevenths = None
     return track_data,chromadata,ground_truth,est_majmin,est_sevenths
 
 class chromaApp():
@@ -105,33 +108,18 @@ class chromaApp():
             value = labels[0],
             description='Chord:',
         )
-        self.dd_template = ipywidgets.Dropdown(
-            options=list(mir_eval.chord.QUALITIES.keys()),
-            value="maj",
-            description='Template:',
-        )
-        self.output = ipywidgets.Output()
-        self.slider_time = ipywidgets.IntRangeSlider(
-            min=0,
-            description="select column Index:",
-            layout=ipywidgets.Layout(width='30%')
-        )
-        self.dd_chords.observe(self.update_sliders,'value')
-        self.dd_template.observe(self.plotChroma,'value')
-        self.slider_time.observe(self.plotChroma,'value')
         
-        display.display(ipywidgets.HBox((self.dd_chords,self.dd_template)),self.slider_time)
+        self.output = ipywidgets.Output()
+        self.output_2 = ipywidgets.Output()
+        self.dd_chords.observe(self.plotChroma,'value')
+        
+        display.display(self.dd_chords)
         self.display_handle = display.display(self.output,display_id=True)
-
-
-    def update_sliders(self,*args):
-        n_cols = self.chromadata[self.dd_chords.value].shape[1]
-        self.slider_time.max = n_cols
-        self.slider_time.value=(0,self.slider_time.max)
+        self.display_handle_2 = display.display(self.output_2,display_id=True)
 
     def plotChroma(self,*args):
         plt.close("all")
-        temp = self.chromadata[self.dd_chords.value][:,self.slider_time.value[0]:self.slider_time.value[1]]
+        temp = self.chromadata[self.dd_chords.value][:,:]
         # check for No chord label -> there is no valid template
         if self.dd_chords.value == "N":
             fig,(ax2,ax0,ax1) = plt.subplots(1,3,width_ratios=(0.3,10,.3),figsize=(9,5))
@@ -143,30 +131,38 @@ class chromaApp():
             return
 
         # create a template chromavector as comparison measure to sort the array
-        template_vector = np.array(mir_eval.chord.QUALITIES[self.dd_template.value])
+        root,quality,_,_ = mir_eval.chord.split(self.dd_chords.value)
+        template_vector = np.array(mir_eval.chord.QUALITIES[quality])
         template_vector = template_vector / np.linalg.norm(template_vector)
         # Compute inner products between each vector and the template vector
-        inner_products = np.dot(temp.T, template_vector)
-        sorted_indices = np.argsort(inner_products)[::-1]
+        # inner_products = np.dot(temp.T, template_vector)
+
+        correlation_coefficients = np.zeros((temp.shape[1],))
+        # using scipy pearsons correlation coefficient
+        for t in range(temp.shape[1]):
+            correlation_coefficients[t] = pearsonr(template_vector,temp[:,t]).statistic
+                           
+        # replace NaN with zeros
+        correlation_coefficients = np.nan_to_num(correlation_coefficients)
+        np.clip(correlation_coefficients,out=correlation_coefficients,a_min=0,a_max=1)
+        sorted_indices = np.argsort(correlation_coefficients)[::-1]
         sorted_chromadata = temp[:, sorted_indices]
         repeated_template = np.tile(template_vector, (12, 1)).T
 
-        fig,(ax2,ax0,ax1) = plt.subplots(1,3,width_ratios=(0.3,10,.3),figsize=(9,5))
+        fig,(ax2,ax0,ax1) = plt.subplots(1,3,width_ratios=(0.3,10,.3),figsize=(8,4))
         img = librosa.display.specshow(repeated_template,ax=ax2, cmap="Reds",vmin=0, vmax=np.max(repeated_template))
         ax2.set_ylabel("Chord Template")
         img = librosa.display.specshow(sorted_chromadata,ax=ax0,hop_length=2048,y_axis='chroma', cmap="Reds",vmin=0, vmax=np.max(repeated_template))
         plt.colorbar(img,ax1)
         ax1.set_ylabel("heatmap values")
         ax = ax0.twinx()
-        ax.plot(inner_products[sorted_indices], 'b', label='Inner Product Values')
-        ax.set_ylabel('Inner Product Values', color='blue')
-        ax.set_ylim(0,0.6)
+        ax.plot(correlation_coefficients[sorted_indices], 'b', label='correlation coefficient')
+        ax.set_ylabel('correlation coefficient', color='blue')
+        ax.set_ylim(0,1)
         ax.tick_params('y', colors='blue')
-
         fig.tight_layout(pad=1)
         ax0.set_xlabel("Sorted Chromagram")
-        self.display_handle.update(fig)    
-
+        self.display_handle.update(fig)  
 
 class visualizationApp():
     """A simple ipython GUI to visualize data of a result file """
@@ -180,18 +176,17 @@ class visualizationApp():
 
     def initializeGUI(self):
         # controls for selecting a file
-        # TODO: check if valid resultfiles can be found in the given folder!
-        # TODO: also check for subfolders!
         self.dropdown_resultfile = ipywidgets.Dropdown(
             options=os.listdir(self.path),
             value = None,
             description='File:',
-            layout=ipywidgets.Layout(width='40%'),
+            layout=ipywidgets.Layout(width='80%'),
             disabled=False
         )
 
         self.button_loadfile = ipywidgets.Button(
-            description='Load File'
+            description='Load File',
+            layout=ipywidgets.Layout(width='20%')
         )
 
         # controls for selecting a track
@@ -199,18 +194,25 @@ class visualizationApp():
             options=["beatles","rwc_pop","rw","queen"],
             value = "beatles",#
             description='Dataset:',
-            layout=ipywidgets.Layout(width='10%'),
+            layout=ipywidgets.Layout(width='30%'),
             disabled=True
         )
 
         self.dropdown_id = ipywidgets.Dropdown(
             description='Track ID:',
             disabled=True,
-            layout=ipywidgets.Layout(width='30%')
+            layout=ipywidgets.Layout(width='40%')
         )
-
+        self.text = ipywidgets.Text(
+            value='-',
+            placeholder='',
+            description='',
+            disabled=True,
+            layout=ipywidgets.Layout(width='10%')  
+        )
         self.button_plot = ipywidgets.Button(
-            description='create Plot'
+            description='create Plot',
+            layout=ipywidgets.Layout(width='20%')  
         )
         
         # controls for displaying a plot
@@ -220,13 +222,13 @@ class visualizationApp():
             readout_format='d',
             description="T0:",
             disabled=True,
-            layout=ipywidgets.Layout(width='30%')
+            layout=ipywidgets.Layout(width='50%')
         )
         self.delta_t = ipywidgets.IntText(
             value=20,
             description='dT:',
             disabled=True,
-            layout=ipywidgets.Layout(width='10%')
+            layout=ipywidgets.Layout(width='20%')
         )
         # create layout
         self.filepaths = ipywidgets.HBox(
@@ -239,6 +241,7 @@ class visualizationApp():
             [
                 self.dropdown_dataset,
                 self.dropdown_id, 
+                self.text,
                 self.button_plot
             ]
         )
@@ -329,17 +332,35 @@ class visualizationApp():
     def preview_result_file(self):
         """prints out an overview of the groups and subgroups of the loaded hdf5 file"""
         majmin_f = [x.majmin_f for x in self.trackdata_list]
+        med_f = 100 * np.median(majmin_f)
+        iqr_f = 100 * np.subtract(*np.percentile(majmin_f, [75, 25]))
+
         majmin_wscr =  [x.majmin_wscr for x in self.trackdata_list]
+        med_wscr = 100 * np.median(majmin_wscr)
+        iqr_wscr = 100 * np.subtract(*np.percentile(majmin_wscr, [75, 25]))
+
         majmin_seg = [x.majmin_seg for x in self.trackdata_list]
+        med_seg = 100 * np.median(majmin_seg)
+        iqr_seg = 100 * np.subtract(*np.percentile(majmin_seg, [75, 25]))
+
         sevenths_f = [x.sevenths_f for x in self.trackdata_list]
+        med_f_sevenths = 100 * np.median(sevenths_f)
+        iqr_f_sevenths = 100 * np.subtract(*np.percentile(sevenths_f, [75, 25]))
+
         sevenths_wscr =  [x.sevenths_wscr for x in self.trackdata_list]
+        med_wscr_sevenths = 100 * np.median(sevenths_wscr)
+        iqr_wscr_sevenths = 100 * np.subtract(*np.percentile(sevenths_wscr, [75, 25]))
+
         sevenths_seg = [x.sevenths_seg for x in self.trackdata_list]
+        med_seg_sevenths = 100 * np.median(sevenths_seg)
+        iqr_seg_sevenths = 100 * np.subtract(*np.percentile(sevenths_seg, [75, 25]))
+
         table_md = "### Evaluation Results: Combined dataset\n"
         table_md += "|eval-scheme| f-score| WSCR| Segmentation |\n| --- | --- |--- |--- |\n"
-        table_md += f"|majmin|{100*np.mean(majmin_f):0.2f}+/-{100*np.std(majmin_f):0.2f}|{100*np.mean(majmin_wscr):0.2f}+/-{100*np.std(majmin_wscr):0.2f}"
-        table_md += f"|{100*np.mean(majmin_seg):0.2f}+/-{100*np.std(majmin_seg):0.2f}|\n"
-        table_md += f"|sevenths|{100*np.mean(sevenths_f):0.2f}+/-{100*np.std(sevenths_f):0.2f}|{100*np.mean(sevenths_wscr):0.2f}+/-{100*np.std(sevenths_wscr):0.2f}"
-        table_md += f"|{100*np.mean(sevenths_seg):0.2f}+/-{100*np.std(sevenths_seg):0.2f}|\n"
+        table_md += f"|majmin|{med_f}/{iqr_f:0.1f}|{med_wscr:0.1f}/{iqr_wscr:0.1f}"
+        table_md += f"|{med_seg:0.1f}/{iqr_seg:0.1f}|\n"
+        table_md += f"|sevenths|{med_f_sevenths:0.1f}/{iqr_f_sevenths:0.1f}|{med_wscr_sevenths:0.1f}+/-{iqr_wscr_sevenths:0.1f}"
+        table_md += f"|{med_seg_sevenths:0.1f}/{iqr_seg_sevenths:0.1f}|\n"
         
         self.output_handle.update(display.Markdown(table_md))
 
@@ -371,3 +392,4 @@ class visualizationApp():
     def update_selected_track_id(self,*args):
         if self.dropdown_id.value is not None:
             self.load_track()
+            self.text.value = self.dropdown_id.value

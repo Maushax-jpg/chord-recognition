@@ -1,4 +1,5 @@
 import dataloader
+
 import numpy as np
 import argparse
 import os
@@ -7,6 +8,32 @@ import utils
 import mir_eval
 import itertools
 import matplotlib.pyplot as plt
+import pitchspace
+import features
+
+def loadChromadata(filepath):
+    with  h5py.File(filepath,"r") as file:
+        data = {}
+        for group in file:
+            try:
+                root,qual,scale_deg,bass = group.split("-")
+                label = mir_eval.chord.join(root,qual,eval(scale_deg),bass)
+            except ValueError:
+                label = "N"
+            data[label] = file[group].get(group)
+        major = np.copy(data["C:maj"])
+        minor = np.copy(data["C:min"])
+        maj7 = np.copy(data["C:maj7"])
+        min7 = np.copy(data["C:min7"])
+        dom7 = np.copy(data["C:7"])
+        selected_chromadata = {}
+        
+        for chromadata,index,qual in zip([major, minor, maj7, dom7, min7],[0,12,24,36,48],["maj","min","maj7","7","min7"]):
+            corr,labels = features.computeCorrelation(chromadata,inner_product=False,template_type="sevenths")
+            # choose a subset of chromadata where the correlation with the original template is the highest
+            highest_correlation = np.argmax(corr,axis=0)
+            selected_chromadata[qual] = chromadata[:,highest_correlation == index]
+    return selected_chromadata
 
 def bigramAnalysis(datasets,alphabet="majmin",split=1,dataset_path=None):
     def getIndex(chordlabel,alphabet="majmin"):
@@ -56,6 +83,7 @@ def bigramAnalysis(datasets,alphabet="majmin",split=1,dataset_path=None):
     return A
 
 
+
 if __name__ == "__main__":
     print("Compute Chord statistics from .hdf5 result file")
     parser = argparse.ArgumentParser(prog='Automatic chord recognition', description='Transcribe audio signal')
@@ -82,11 +110,10 @@ if __name__ == "__main__":
     ]
 
     # overwrite args for testing
-    filepath = "/home/max/ET-TI/Masterarbeit/chord-recognition/results/results_recurrencePlot.hdf5"
-    outputpath = "/home/max/ET-TI/Masterarbeit/chord-recognition/models/chromadata_root_invariant_prefiltered_split_1.hdf5"
+    filepath = "/home/max/ET-TI/Masterarbeit/chord-recognition/results/median_both.hdf5"
+    # split = 1
+    outputpath = f"/home/max/ET-TI/Masterarbeit/chord-recognition/models/chromadata_root_invariant_median.hdf5"
     alphabet = "majmin"
-    split = 1
-
 
     # The annotations are to granular for the chromagram we can compute, therefore one can ignore additonal notes
     ignore_additional_notes = True
@@ -96,17 +123,6 @@ if __name__ == "__main__":
     compute_median = True
     # use prefilter
     prefitered = True
-
-    if alphabet == "majmin":
-        qualities = ["N","maj","min"]
-    elif alphabet == "triads":
-        qualities = ["N","maj","min","dim","aug"]
-    elif alphabet == "triads_extended":
-        qualities = ["N","maj","min","dim","aug","sus2","sus4"]
-    elif alphabet == "7":
-        qualities = ["N","maj","min","maj7","7","min7"]
-    elif alphabet == "7_triads":
-        qualities = ["N","maj","min","dim","aug","maj7","7","min7"]
 
     with  h5py.File(filepath,"r") as file:
         datasets = file.attrs.get("dataset")
@@ -122,17 +138,12 @@ if __name__ == "__main__":
         prefilter = file.attrs.get("prefilter")
         # iterate over all datasets
         for grp_name in datasets:
-            dset = dataloader.Dataloader(grp_name,default_path,None)
-            
-            
-            # track_list = dset.getExperimentSplits(split) # list of track_ids that are in this fold/split
+            dset = dataloader.Dataloader(grp_name,default_path,None) 
+            #track_list = dset.getExperimentSplits(split) # list of track_ids that are in this fold/split
 
             # iterate over all track_ids
             for subgrp_name in file[f"{grp_name}/"]:
                 subgrp = file[f"{grp_name}/{subgrp_name}"]
-                
-                # if subgrp_name in track_list: # exclude the track
-                #     continue
 
                 # load chroma and ground truth
                 if prefitered:
@@ -182,13 +193,52 @@ if __name__ == "__main__":
                         chords[temp_label] = temp_chroma
                     else:
                         chords[temp_label] = np.concatenate((data,temp_chroma),axis=1)
-       
+
+
+    # create chromadata for model 
+    model_path = f"/home/max/ET-TI/Masterarbeit/chord-recognition/models/cpss_model_triads.hdf5"
+    pitch_class_names = ["I","II","III","IV","V","VI"]
+    shift = [0,2,4,5,7,9]
+    with h5py.File(model_path,"w") as file:
+        for i,quality,index in zip(range(7),["maj","min","min","maj","maj","min"],[0,12,12,0,0,12]):
+            # create template vector for selecting the chromavectors with highest correlation
+            template_vector = np.array(mir_eval.chord.QUALITIES[quality])
+            chroma = chords[f"C-{quality}-set()-1"]
+
+            corr,labels = features.computeCorrelation(chroma,inner_product=False,template_type="sevenths")
+            # choose a subset of chromadata where the correlation with the original template is the highest
+            highest_correlation = np.argmax(corr,axis=0)
+            selected_chroma = chroma[:,highest_correlation == index]
+
+
+            temp = chords[f"C-{quality}-set()-1"]
+            combined_array = np.vstack([template_vector, temp.T])
+            correlation_matrix = np.corrcoef(combined_array)
+            correlation_coefficients = correlation_matrix[0, 1:]
+                    
+            sorted_indices = np.argsort(correlation_coefficients)[::-1]
+            sorted_chromadata = temp[:, sorted_indices]
+            selected_chroma = temp[:, correlation_coefficients > 0.8]
+            selected_chroma = np.roll(selected_chroma,shift[i],axis=0)  # create root invariant chroma
+            grp = file.create_group(pitch_class_names[i])
+            grp.create_dataset("chroma",data=selected_chroma)
+
+            F,FR,TR,DR = pitchspace.computeCPSSfeatures(selected_chroma)
+            grp.create_dataset("mean_FR",data= np.mean(FR[:2,:],axis=1))
+            grp.create_dataset("mean_TR",data= np.mean(TR[:2,:],axis=1))
+            grp.create_dataset("cov_FR",data= np.cov(FR[0,:],FR[1,:]))
+            grp.create_dataset("cov_TR",data= np.cov(TR[0,:],TR[1,:]))
+            x = np.vstack((FR[:2,:],TR[:2,:]))
+            grp.create_dataset("mean",data = np.mean(x,axis=1))
+            grp.create_dataset("cov",data = np.cov(x))
+            
+    # create chromadata
     with  h5py.File(outputpath,"w") as file:
-        file.attrs.create("split",split)
         file.attrs.create("prefilter",prefilter)
         for key,value in chroma_params.items():
             file.attrs.create(key,value)
 
         for key,value in chords.items():
             grp = file.create_group(key)
+            
             grp.create_dataset(key,data=value)

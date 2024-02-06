@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from collections import namedtuple
 import pitchspace
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
+
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals accident')
 """ 
@@ -296,18 +299,73 @@ def plotCircleDR(ax,pitch_class_index=0):
     ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
     ax.axis('off')
 
-def plotPitchspace(keys=[0]):
-    n = len(keys)
-
-    fig,ax = plt.subplots(nrows=n, ncols=3, figsize=(3*1.7+0.5,1.7*n+0.5))
-    ax[0,0].text(0,2,f"FR",ha='center',va='center',fontsize=12)
-    ax[0,1].text(0,2,f"TR",ha='center',va='center',fontsize=12)
-    ax[0,2].text(0,2,f"DR",ha='center',va='center',fontsize=12)
-    for i,key in enumerate(keys):
-        plotCircleFR(ax[i, 0], key)
-        plotCircleTR(ax[i, 1], key)
-        plotCircleDR(ax[i, 2], key)
-        ax[i,0].text(-2,0,f"{pitch_classes[key].name}",ha='center',va='center',fontsize=12)
+def plotPitchspace():
+    n=12
+    fig,ax = plt.subplots(nrows=n, ncols=3, figsize=(3.3,n*1+0.3))
+    ax[0, 0].text(0,2,f"FR",ha='center',va='center',fontsize=12)
+    ax[0, 1].text(0,2,f"TR",ha='center',va='center',fontsize=12)
+    ax[0, 2].text(0,2,f"DR",ha='center',va='center',fontsize=12)
+    for i in range(n):
+        plotCircleFR(ax[i, 0], i)
+        plotCircleTR(ax[i, 1], i)
+        plotCircleDR(ax[i, 2], i)
+        ax[i, 0].text(-2,0,f"{pitch_classes[i].name}",ha='center',va='center',fontsize=12)
 
     fig.subplots_adjust(left=0.1, top=0.9)
-    fig.tight_layout(pad=2.0)    
+    fig.tight_layout(w_pad=0.5,h_pad=1)    
+    return fig,ax
+
+
+def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
+    """
+    https://matplotlib.org/stable/gallery/statistics/confidence_ellipse.html
+
+    Create a plot of the covariance confidence ellipse of *x* and *y*.
+
+    Parameters
+    ----------
+    x, y : array-like, shape (n, )
+        Input data.
+
+    ax : matplotlib.axes.Axes
+        The axes object to draw the ellipse into.
+
+    n_std : float
+        The number of standard deviations to determine the ellipse's radiuses.
+
+    **kwargs
+        Forwarded to `~matplotlib.patches.Ellipse`
+
+    Returns
+    -------
+    matplotlib.patches.Ellipse
+    """
+    if x.size != y.size:
+        raise ValueError("x and y must be the same size")
+
+    cov = np.cov(x, y,ddof=0)
+    pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
+    # Using a special case to obtain the eigenvalues of this
+    # two-dimensional dataset.
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+                      facecolor=facecolor, **kwargs)
+
+    # Calculating the standard deviation of x from
+    # the squareroot of the variance and multiplying
+    # with the given number of standard deviations.
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    mean_x = np.mean(x)
+
+    # calculating the standard deviation of y ...
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    mean_y = np.mean(y)
+
+    transf = transforms.Affine2D() \
+        .rotate_deg(45) \
+        .scale(scale_x, scale_y) \
+        .translate(mean_x, mean_y)
+
+    ellipse.set_transform(transf + ax.transData)
+    return ax.add_patch(ellipse)
