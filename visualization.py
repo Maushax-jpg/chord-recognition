@@ -10,8 +10,6 @@ import mir_eval
 import librosa.display
 from scipy.stats import pearsonr
 
-import pitchspace
-from scipy.stats import pearsonr
 
 
 trackdata = namedtuple('track','track_id name dataset majmin_wscr majmin_seg majmin_f sevenths_wscr sevenths_seg sevenths_f')

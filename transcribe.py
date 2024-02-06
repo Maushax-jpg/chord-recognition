@@ -8,7 +8,6 @@ import h5py
 from tqdm import tqdm
 import madmom
 import pitchspace
-import pitchspace
 
 def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
