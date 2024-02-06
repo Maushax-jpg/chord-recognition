@@ -2,19 +2,71 @@ import librosa
 import numpy as np
 from scipy.fftpack import dct,idct
 from scipy.ndimage import median_filter
+from scipy.stats import pearsonr
 import utils
 import os
 import madmom
 
 EPS = np.finfo(float).eps # machine epsilon
 
+def sumChromaDifferences(chroma):
+    if chroma.shape[0] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    # rearange chroma vector
+    cq_fifth = np.zeros_like(chroma,dtype=float)
+    for q in range(12):
+        cq_fifth[q,:] = chroma[(q * 7) % 12, :]
 
-def computeRMS(y,fs=22050, hop_length=2048):
-    S,_ = librosa.magphase(librosa.stft(y,n_fft=4096,hop_length=hop_length))
-    rms = librosa.feature.rms(S=S,frame_length=4096,hop_length=hop_length)[0]
-    return 20*np.log10(rms + EPS)
+    gamma_diff = np.zeros_like(chroma,dtype=float)
+    for q in range(12):
+        gamma_diff[q, :] = np.abs(cq_fifth[(q+1) % 12, :] - cq_fifth[q,:]) 
+    # normalize to one
+    gamma = 1- np.sum(gamma_diff,axis=0)/2
+    return gamma
 
-def crpChroma(y, fs=22050, hop_length=2048, nCRP=55,eta=100,window=False,compression=True,liftering=True,norm="l1",clip=True):
+def negativeSlope(chroma):
+    if chroma.shape[0] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    KSPARSE = 0.038461538461538464 # normalization constant
+    gamma = np.zeros(chroma.shape[1],dtype=float)
+    for t in range(chroma.shape[1]):
+        y = np.sort(chroma[:, t])[::-1] # sort descending
+        # linear regression using numpy
+        A = np.vstack([np.arange(12), np.ones((12,))]).T
+        k, _ = np.linalg.lstsq(A, y, rcond=None)[0]
+        #rescaled feature
+        gamma[t] = 1 - np.abs(k)/KSPARSE
+    return gamma
+
+def shannonEntropy(chroma):
+    """calculates the Shannon entropy of a chromagram for every timestep. The chromavector is treated as a random variable."""
+    if chroma.shape[0] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=0)/np.log2(12)
+
+def nonSparseness(chroma):
+    if chroma.shape[0] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    norm_l1 = np.linalg.norm(chroma, ord=1,axis=0)
+    norm_l2 = np.linalg.norm(chroma, ord=2,axis=0) + np.finfo(float).eps
+    gamma = 1 - ((np.sqrt(12)-norm_l1/norm_l2) / (np.sqrt(12)-1))
+    return gamma
+
+def flatness(chroma):
+    if chroma.shape[0] != 12:
+        raise ValueError("invalid Chromagram shape!")
+    geometric_mean = np.product(chroma + np.finfo(float).eps, axis=0)**(1/12)
+    arithmetic_mean = np.sum(chroma,axis=0) / 12 + np.finfo(float).eps
+    return geometric_mean/arithmetic_mean
+
+def computeRMS(y, fs=22050, hop_length=2048):
+    S,_ = librosa.magphase(librosa.stft(y, n_fft=4096, hop_length=hop_length))
+    rms = librosa.feature.rms(S=S, frame_length=4096, hop_length=hop_length)[0]
+    rms = 20 * np.log10(rms + EPS)
+    np.clip(rms, -80, 0, out=rms)
+    return rms
+
+def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=False,compression=True,liftering=True,norm="l1",clip=True):
     """compute Chroma DCT-Reduced Log Pitch feature from an audio signal"""
     bins_per_octave = 36
     octaves = 8
@@ -102,20 +154,31 @@ def computeWeightMatrix(chroma,M=15,neighbors=50):
     weight_matrix = ssm*recurrence_plot
     return weight_matrix,ssm,ssm_smoothed
 
-def computeCorrelation(chroma,template_type="majmin"):
+def computeCorrelation(chroma,inner_product=True,template_type="majmin"):
     templates,labels = utils.createChordTemplates(template_type=template_type) 
-    correlation = np.matmul(templates.T,chroma)
-    np.clip(correlation,out=correlation,a_min=0,a_max=1) # disregard negative values
+    if inner_product:
+        correlation = np.matmul(templates.T,chroma)
+        np.clip(correlation,out=correlation,a_min=0,a_max=1)
+    else:
+        correlation = np.zeros((templates.shape[1],chroma.shape[1]),dtype=float)
+        # using scipy pearsons correlation coefficient
+        for i in range(templates.shape[1]):
+            for t in range(chroma.shape[1]):
+                correlation[i,t] = pearsonr(templates[:,i],chroma[:,t]).statistic
+
+        # replace NaN with zeros
+        correlation = np.nan_to_num(correlation)
+        np.clip(correlation,out=correlation,a_min=0,a_max=1)
     return correlation,labels
 
 def applyPrefilter(t_chroma, chroma, filter_type,**params):
     """
     smooth chromagram with median or recurrence plot
-    @params:\\
-    filter_type = "median"\\
+    @params: templates
+    filter_type = "median" \\
     N .. median filter length, defaults to 14
 
-    filter_type = "rp"\\
+    filter_type = "rp" \\
     M .. temporal embedding of self-similarity matrix , default = 25\\
     neighbors .. number of chroma vectors included in the adaptive threshold for computing the recurrence plot , default = 50 
     """
@@ -217,3 +280,5 @@ def applyPostfilter(correlation,labels,filter_type,**params):
         C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
         correlation_smoothed, _, _, _ = viterbi_log_likelihood(A, C, B_O)
     return correlation_smoothed
+
+
