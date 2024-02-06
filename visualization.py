@@ -8,7 +8,6 @@ from collections import namedtuple
 import matplotlib.pyplot as plt
 import mir_eval
 import librosa.display
-import pitchspace
 from scipy.stats import pearsonr
 
 
