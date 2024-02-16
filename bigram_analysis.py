@@ -35,7 +35,6 @@ QUALITY_REDUCTION = {"min6":"min",
 if __name__ == "__main__":
     parser = ArgumentParser(prog='Bigram analysis', description='creates a state-transition matrix')
 
-    parser.add_argument('split',default="1",choices=["1","2","3","4","5","6","7","8"])
     parser.add_argument('alphabet',default="majmin",choices=["majmin","sevenths"])
     args = parser.parse_args()
 
@@ -49,48 +48,55 @@ if __name__ == "__main__":
     default_path = os.path.join(script_directory, "mirdata")
 
     _,labels = utils.createChordTemplates(args.alphabet)
-    A = np.ones((len(labels),len(labels)),dtype=int)
-    for dataset_name in DATASETS:
-        dset = dataloader.Dataloader(dataset_name,default_path,"none")
-        for track_id in dset.getExperimentSplits(int(args.split)):
-            audiopath,annotationpath = dset[track_id]
-            ref_intervals,ref_labels = utils.loadChordAnnotations(annotationpath)
-            for (interval_a,interval_b), (label_a, label_b) in zip(itertools.pairwise(ref_intervals),itertools.pairwise(ref_labels)):
-                if label_a == "N" or label_b == "N": # ignore no chord changes
-                    continue
 
-                # reduce extended chordlabels and ignore additional notes
-                root_a,qual_a,_,_ = mir_eval.chord.split(label_a,True)
-                root_b,qual_b,_,_ = mir_eval.chord.split(label_b,True)
-                qual_a = QUALITY_REDUCTION.get(qual_a,qual_a)
-                qual_b = QUALITY_REDUCTION.get(qual_b,qual_b)
+    for split in range(1,9):
+        A = np.ones((len(labels),len(labels)),dtype=int)
+        for dataset_name in DATASETS:
+            dset = dataloader.Dataloader(dataset_name,default_path,"none")
+            for track_id in dset.getExperimentSplits(split):
+                audiopath,annotationpath = dset[track_id]
+                ref_intervals,ref_labels = utils.loadChordAnnotations(annotationpath)
+                for (interval_a,interval_b), (label_a, label_b) in zip(itertools.pairwise(ref_intervals),itertools.pairwise(ref_labels)):
+                    if label_a == "N" or label_b == "N": # ignore no chord changes
+                        continue
 
-                pc_root_a = mir_eval.chord.pitch_class_to_semitone(root_a)
-                pc_root_b =  mir_eval.chord.pitch_class_to_semitone(root_b)
+                    # reduce extended chordlabels and ignore additional notes
+                    root_a,qual_a,_,_ = mir_eval.chord.split(label_a,True)
+                    root_b,qual_b,_,_ = mir_eval.chord.split(label_b,True)
+                    qual_a = QUALITY_REDUCTION.get(qual_a,qual_a)
+                    qual_b = QUALITY_REDUCTION.get(qual_b,qual_b)
 
-                # iterate all 12 keys
-                for pc_index in range(12):
-                    shift = pc_root_a - utils.pitch_classes[pc_index].pitch_class_index
-                    # set root of label_a to "C", shift root of label_b accordingly
-                    root_a = utils.pitch_classes[pc_index].name
-                    root_b = utils.pitch_classes[(pc_root_b - shift) % 12].name
-                    
-                    # perform enharmonic substitution if possible
-                    root_b = ENHARMONIC_NOTES.get(root_b,root_b)
-                    chordlabel_a = mir_eval.chord.join(root_a, qual_a)
-                    chordlabel_b = mir_eval.chord.join(root_b, qual_b)
+                    pc_root_a = mir_eval.chord.pitch_class_to_semitone(root_a)
+                    pc_root_b =  mir_eval.chord.pitch_class_to_semitone(root_b)
 
-                    index_a = labels.index(chordlabel_a)
-                    index_b = labels.index(chordlabel_b)
-                    # calculate the number of self transitions for label_a
-                    A[index_a, index_a] += (interval_a[1] -interval_a[0]) // HOP_TIME
-                    # add chord transition
-                    A[index_a, index_b] += 1
-                    
-    # set some values for No chord transition
-    A[-1,-1] = A[0,0]
-    A[-1,:-1] = A[:-1,-1] = np.min(A[0,:])
+                    # iterate all 12 keys
+                    for pc_index in range(12):
+                        shift = pc_root_a - utils.pitch_classes[pc_index].pitch_class_index
+                        # set root of label_a to "C", shift root of label_b accordingly
+                        root_a = utils.pitch_classes[pc_index].name
+                        root_b = utils.pitch_classes[(pc_root_b - shift) % 12].name
+                        
+                        # perform enharmonic substitution if possible
+                        root_b = ENHARMONIC_NOTES.get(root_b,root_b)
+                        chordlabel_a = mir_eval.chord.join(root_a, qual_a)
+                        chordlabel_b = mir_eval.chord.join(root_b, qual_b)
 
-    # save to file
-    outputpath = os.path.join(script_directory, "models",f"A_{args.alphabet}_{args.split}.npy")
-    np.save(outputpath, A)
+                        index_a = labels.index(chordlabel_a)
+                        index_b = labels.index(chordlabel_b)
+                        # calculate the number of self transitions for label_a
+                        A[index_a, index_a] += (interval_a[1] -interval_a[0]) // HOP_TIME
+                        # add chord transition
+                        A[index_a, index_b] += 1
+                        
+        # set some values for No chord transition
+        A[-1,-1] = A[0,0]
+        A[-1,:-1] = A[:-1,-1] = np.min(A[0,:])
+
+        # normalize the matrix to 1 
+        state_transition_matrix = np.zeros_like(A,dtype=float)
+        for i in range(state_transition_matrix.shape[0]):
+            state_transition_matrix[i,:] = A[i,:] / np.sum(A[i,:])
+
+        # save to file
+        outputpath = os.path.join(script_directory, "models","state_transitions",f"A_{args.alphabet}_{split}.npy")
+        np.save(outputpath, state_transition_matrix)
