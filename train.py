@@ -1,5 +1,4 @@
 import dataloader
-
 import numpy as np
 import argparse
 import os
@@ -7,8 +6,6 @@ import h5py
 import utils
 import mir_eval
 import itertools
-import matplotlib.pyplot as plt
-import pitchspace
 import features
 
 def loadChromadata(filepath):
@@ -43,13 +40,15 @@ def bigramAnalysis(datasets,alphabet="majmin",split=1,dataset_path=None):
             if quality in ["dim","hdmin7","min7","minmaj7","min6","min9","min11","min13"]:
                 pitch_class_offset = 12
         else:
-            raise NotImplementedError("sevenths alphabet not implemented yet!")
+            raise ValueError
         pc_index = mir_eval.chord.pitch_class_to_semitone(root)
         return pc_index,pitch_class_offset
-
+    
     hop_time = 2048/22050
     if alphabet == "majmin":
         A = np.zeros((25,25),dtype=int)
+    elif alphabet == "sevenths":
+        A = np.zeros((61,61),dtype=int)
     if dataset_path is None:
         # use default path
         script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -83,7 +82,6 @@ def bigramAnalysis(datasets,alphabet="majmin",split=1,dataset_path=None):
     return A
 
 
-
 if __name__ == "__main__":
     print("Compute Chord statistics from .hdf5 result file")
     parser = argparse.ArgumentParser(prog='Automatic chord recognition', description='Transcribe audio signal')
@@ -115,7 +113,7 @@ if __name__ == "__main__":
     outputpath = f"/home/max/ET-TI/Masterarbeit/chord-recognition/models/chromadata_root_invariant_median.hdf5"
     alphabet = "majmin"
 
-    # The annotations are to granular for the chromagram we can compute, therefore one can ignore additonal notes
+    # The annotations are too granular for the chromagram we can compute, therefore one can ignore additonal notes
     ignore_additional_notes = True
     # compute root invariant vectors
     shift_to_c =  True
@@ -183,6 +181,7 @@ if __name__ == "__main__":
                             temp_chroma = np.roll(temp_chroma,-pc_index,axis=0)
                             root="C"
                         if ignore_additional_notes:
+        
                             temp_label = f"{root}-{qual}-set()-1"  # root is bass note and no additional notes are used 
                         else:
                             temp_label = f"{root}-{qual}-{scale_deg}-{bass}"  # create a label that can be decoded easily
@@ -193,46 +192,8 @@ if __name__ == "__main__":
                         chords[temp_label] = temp_chroma
                     else:
                         chords[temp_label] = np.concatenate((data,temp_chroma),axis=1)
-
-
-    # create chromadata for model 
-    model_path = f"/home/max/ET-TI/Masterarbeit/chord-recognition/models/cpss_model_triads.hdf5"
-    pitch_class_names = ["I","II","III","IV","V","VI"]
-    shift = [0,2,4,5,7,9]
-    with h5py.File(model_path,"w") as file:
-        for i,quality,index in zip(range(7),["maj","min","min","maj","maj","min"],[0,12,12,0,0,12]):
-            # create template vector for selecting the chromavectors with highest correlation
-            template_vector = np.array(mir_eval.chord.QUALITIES[quality])
-            chroma = chords[f"C-{quality}-set()-1"]
-
-            corr,labels = features.computeCorrelation(chroma,inner_product=False,template_type="sevenths")
-            # choose a subset of chromadata where the correlation with the original template is the highest
-            highest_correlation = np.argmax(corr,axis=0)
-            selected_chroma = chroma[:,highest_correlation == index]
-
-
-            temp = chords[f"C-{quality}-set()-1"]
-            combined_array = np.vstack([template_vector, temp.T])
-            correlation_matrix = np.corrcoef(combined_array)
-            correlation_coefficients = correlation_matrix[0, 1:]
-                    
-            sorted_indices = np.argsort(correlation_coefficients)[::-1]
-            sorted_chromadata = temp[:, sorted_indices]
-            selected_chroma = temp[:, correlation_coefficients > 0.8]
-            selected_chroma = np.roll(selected_chroma,shift[i],axis=0)  # create root invariant chroma
-            grp = file.create_group(pitch_class_names[i])
-            grp.create_dataset("chroma",data=selected_chroma)
-
-            F,FR,TR,DR = pitchspace.computeCPSSfeatures(selected_chroma)
-            grp.create_dataset("mean_FR",data= np.mean(FR[:2,:],axis=1))
-            grp.create_dataset("mean_TR",data= np.mean(TR[:2,:],axis=1))
-            grp.create_dataset("cov_FR",data= np.cov(FR[0,:],FR[1,:]))
-            grp.create_dataset("cov_TR",data= np.cov(TR[0,:],TR[1,:]))
-            x = np.vstack((FR[:2,:],TR[:2,:]))
-            grp.create_dataset("mean",data = np.mean(x,axis=1))
-            grp.create_dataset("cov",data = np.cov(x))
-            
-    # create chromadata
+  
+    # write labeled chromadata to file
     with  h5py.File(outputpath,"w") as file:
         file.attrs.create("prefilter",prefilter)
         for key,value in chroma_params.items():
@@ -240,5 +201,7 @@ if __name__ == "__main__":
 
         for key,value in chords.items():
             grp = file.create_group(key)
-            
             grp.create_dataset(key,data=value)
+
+
+        

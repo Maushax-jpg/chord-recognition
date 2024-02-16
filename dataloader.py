@@ -4,6 +4,17 @@ import json
 import utils
 from abc import ABC, abstractmethod
 
+# list of tracks that should be excluded due to issues with the annotations / or lack of harmonic content
+OUTLIERS = ['03_-_Anna_(Go_To_Him)', # tuning issues
+            '10_-_Lovely_Rita', # tuning issues
+            'CD1_-_05_-_Wild_Honey_Pie', # little harmonic content
+            'CD1_-_06_-_The_Continuing_Story_of_Bungalow_Bill', # incoherent audiofile
+            'CD2_-_12_-_Revolution_9',  # little harmonic content
+            '02 Another One Bites The Dust', # little harmonic content
+            '16 We Will Rock You', # little harmonic content
+            "Stalker's Day Off (I've Been Hanging Around)", # faulty audio / issues with annotations
+            'Stand Your Ground'  # faulty audio / issues with annotations
+]
 
 class Dataset(ABC):
     """Abstract class for a dataset"""
