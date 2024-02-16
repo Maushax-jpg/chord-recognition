@@ -11,7 +11,7 @@ import pitchspace
 
 def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
-    parser = argparse.ArgumentParser(prog='Automatic chord recognition', description='Transcribe audio signal')
+    parser = argparse.ArgumentParser(prog='Automatic chord recognition experiment', description='Transcribe audio signal')
 
     # create a default path 
     script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -21,22 +21,19 @@ def parse_arguments():
     parser.add_argument('--dataset_path',type=str,default=default_path,help="set path to datasets")
     parser.add_argument('--dataset',choices=['beatles','rwc_pop','rw','queen'],
                         default=['beatles','rwc_pop','rw','queen'],
-                        help="select dataset or ommit to use all datasets"
-                        )
+                        help="select dataset or ommit to use all datasets")
     parser.add_argument('--transcriber', choices=['template', 'madmom','cpss'], default='template', 
-                        help='select template based Recognition or use madmoms deep Chroma processor'
-                        )
+                        help='select template based Recognition or use madmoms deep Chroma processor')
     parser.add_argument('--chroma_type', choices=['CRP','Clog','CQT'], default='CRP', 
-                        help='select chromagram type'
-                        )
+                        help='select chromagram type')
     parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="none",
-                         help='Select source separation type'
-                         )
+                         help='Select source separation type')
     parser.add_argument('--prefilter', choices=[None, 'median', 'rp'], default='median', help='Select Prefilter type')
     parser.add_argument('--prefilter_length', type=int, default=7, help='Prefilter length')
     parser.add_argument('--embedding', type=int, default=25, help='Embedding value')
     parser.add_argument('--neighbors', type=int, default=50, help='Neighbours value')
     parser.add_argument('--postfilter', choices=[None, 'hmm', 'median'], default='hmm', help='select Postfilter type')
+    parser.add_argument('--use_chord_statistics', type=bool, default=True, help='use state transition matrix from data')
     parser.add_argument('--transition_prob', type=float, default=0.2, help='self-transition probability for a chord')
     parser.add_argument('--postfilter_length', type=int, default=4, help='Postfilter length')
     args = parser.parse_args()
@@ -98,17 +95,17 @@ def transcribeTemplate(y,data,metadata,params):
         chroma_params["nCRP"] = 33
         chroma_params["eta"] = 100
         chroma_params["window"] = True
-        chroma = features.crpChroma(y,nCRP=33,eta=100,liftering=True,window=True)
+        chroma, C = features.crpChroma(y,nCRP=33,eta=100,liftering=True,window=True)
     elif chroma_type == "Clog":
         chroma_params["eta"] = 100
         chroma_params["window"] = True
-        chroma = features.crpChroma(y,eta=100,liftering=False,window=True)
+        chroma, C = features.crpChroma(y,eta=100,liftering=False,window=True)
     else:
-        chroma = features.crpChroma(y,liftering=False,compression=False,window=False)
+        chroma, C = features.crpChroma(y,liftering=False,compression=False,window=False)
 
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
     data["chroma"] = (chroma,chroma_params)
-
+    data["cqt"] = (C,{})
     # apply prefilter
     filter_type = params.get("prefilter")
     chroma_smoothed = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
