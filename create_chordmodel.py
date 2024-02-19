@@ -48,7 +48,7 @@ if __name__ == "__main__":
             if args.alphabet == "sevenths":
                 # create the tetrads for all major keys  
                 for i,qual in tqdm(zip(shift,["maj7","min7","min7","maj7","7","min7"]),desc="tetrads",total=7):
-                    chroma = np.roll(pitchspace.chromadata[qual],key_index + i,axis=0)
+                    chroma = np.roll(chromadata[qual],key_index + i,axis=0)
                     # transform onto pitchspace 
                     F,FR,TR,_ = pitchspace.computeCPSSfeatures(chroma)
                     # rearange features in a tuple
@@ -59,7 +59,6 @@ if __name__ == "__main__":
                     )
                     chord_index = (key_index + i) % 12 + offsets[qual]
                     chordmodels.append(pitchspace.ChordModel(chord_index, x))
-                keys[key_index] = chordmodels
-        
-        outputpath = os.path.join(script_directory, "models","cpss",f"cpss_{split}.npy")
+            keys[key_index] = chordmodels
+        outputpath = os.path.join(script_directory, "models","cpss",f"cpss_{args.alphabet}_{split}.npy")
         np.save(outputpath,keys)
