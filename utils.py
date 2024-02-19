@@ -35,10 +35,10 @@ pitch_classes = [
 
 enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#","G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
 
-def loadAudiofile(filepath,fs=22050):
+def loadAudiofile(filepath,fs=22050,**kwargs):
     """load audio signal"""
     try:
-        y,_ = librosa.load(filepath,mono=True,sr=fs)
+        y,_ = librosa.load(filepath,mono=True,sr=fs,**kwargs)
         y = y / np.max(y) # normalize 
     except FileNotFoundError:
         raise FileNotFoundError(f"could not load file: {filepath}")
@@ -118,6 +118,8 @@ def createChordTemplates(template_type="majmin"):
         quality = ["maj","min","dim","aug","sus2","sus4"]
     elif template_type == "sevenths":
         quality = ["maj","min","maj7","7","min7"]
+    elif template_type == "triads_tetrads":
+        quality = ["maj","min","dim","aug","sus2","sus4","maj7","7","min7","hdim7"]
     templates = np.zeros((12,12*len(quality)+1),dtype=float)
     chord_labels = []
     chord_index = 0
@@ -130,10 +132,17 @@ def createChordTemplates(template_type="majmin"):
             templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
-    for i in range(12):
-        templates[i,chord_index] = -1/12
+    for i in range(0,12,2):
+        templates[i,chord_index] = 1/6
+
     chord_labels.append("N")
     return templates,chord_labels
+
+def createKeyTemplates():
+    key_templates = np.zeros((12,12),dtype=float)
+    for i in range(12):
+        key_templates[:,i] = np.roll([1,0,1,0,1,1,0,1,0,1,0,1],shift=i)
+    return key_templates
 
 def getTimeIndices(timevector,time_interval):
     i0 = 0
@@ -315,6 +324,23 @@ def plotPitchspace():
     fig.tight_layout(w_pad=0.5,h_pad=1)    
     return fig,ax
 
+def create_violinplot(ax,data,xlabels,bodycolor='cyan'):
+    violin_parts = ax.violinplot(data,showmeans=False, showmedians=True,
+            showextrema=False)
+    violin_parts["cmedians"].set_color("red")
+    for x in violin_parts["bodies"]:
+        x.set_color(bodycolor)
+    bplot_parts = ax.boxplot(data,
+                showfliers=True,medianprops=dict(linestyle=None,linewidth=0),
+                flierprops=dict(markerfacecolor='k', marker='o',markersize=1),
+                widths=0.1)
+    ax.set_yticks(np.arange(0,110,10))
+    ax.set_ylim(0,100)
+    ax.set_ylabel("F-score in %")
+    ax.set_xticks(np.arange(1, len(xlabels) + 1), labels=xlabels)
+    ax.set_xlim(0.5, len(xlabels) + 0.5);
+    ax.grid("on")
+    return violin_parts, bplot_parts
 
 def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
     """
