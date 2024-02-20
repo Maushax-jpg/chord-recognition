@@ -7,6 +7,7 @@ from matplotlib.patches import Rectangle
 from collections import namedtuple
 import pitchspace
 from matplotlib.patches import Ellipse
+import os.path
 import matplotlib.transforms as transforms
 
 
@@ -163,7 +164,13 @@ def plotChromagram(ax,t_chroma,chroma,time_interval=None):
 
 def plotCQT(ax,t_chroma,cqt,time_interval=None):
     i0,i1 = getTimeIndices(t_chroma,time_interval)
-    img = librosa.display.specshow(cqt[:,i0:i1],x_coords=t_chroma[i0:i1],x_axis="time", y_axis='cqt', cmap="viridis", ax=ax,vmin=0, vmax=np.max(cqt[:,i0:i1]))
+    img = librosa.display.specshow(cqt[:,i0:i1],
+                                x_coords=t_chroma[i0:i1],
+                                x_axis="time",
+                                y_axis='cqt_hz',
+                                cmap="viridis",
+                                ax=ax,vmin=0,
+                                vmax=np.max(cqt[:,i0:i1]))
     return img
 
 def plotCorrelation(ax,t_chroma,correlation,time_interval=None):

@@ -9,14 +9,14 @@ from tqdm import tqdm
 import madmom
 import pitchspace
 
+# create a default path 
+script_directory = os.path.dirname(os.path.abspath(__file__))
+default_path = os.path.join(script_directory, "mirdata")
+
 def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
+    global default_path
     parser = argparse.ArgumentParser(prog='Automatic chord recognition experiment', description='Transcribe audio signal')
-
-    # create a default path 
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    default_path = os.path.join(script_directory, "mirdata")
-
     parser.add_argument('filename',help="specify filename to save the results")
     parser.add_argument('--dataset_path',type=str,default=default_path,help="set path to datasets")
     parser.add_argument('--dataset',choices=['beatles','rwc_pop','rw','queen'],
@@ -35,7 +35,6 @@ def parse_arguments():
     parser.add_argument('--postfilter', choices=[None, 'hmm', 'median'], default='hmm', help='select Postfilter type')
     parser.add_argument('--use_chord_statistics', type=bool, default=True, help='use state transition matrix from data')
     parser.add_argument('--transition_prob', type=float, default=0.2, help='self-transition probability for a chord')
-    parser.add_argument('--postfilter_length', type=int, default=4, help='Postfilter length')
     args = parser.parse_args()
 
     # Convert Namespace to dictionary
@@ -86,7 +85,8 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
         for key,value in metadata.items():
             dset.attrs.create(str(key), value)
 
-def transcribeTemplate(y,data,metadata,params):
+def transcribeTemplate(filepath,split,data,metadata,params):
+    y = utils.loadAudiofile(filepath)
     # compute chromagram
     chroma_type = params.get("chroma_type")
 
@@ -95,34 +95,48 @@ def transcribeTemplate(y,data,metadata,params):
         chroma_params["nCRP"] = 33
         chroma_params["eta"] = 100
         chroma_params["window"] = True
-        chroma, C = features.crpChroma(y,nCRP=33,eta=100,liftering=True,window=True)
+        chroma, pitchgram,pitchgram_cqt = features.crpChroma(y,nCRP=33,eta=100,liftering=True,window=True)
     elif chroma_type == "Clog":
         chroma_params["eta"] = 100
         chroma_params["window"] = True
-        chroma, C = features.crpChroma(y,eta=100,liftering=False,window=True)
+        chroma, pitchgram,pitchgram_cqt = features.crpChroma(y,eta=100,liftering=False,window=True)
     else:
-        chroma, C = features.crpChroma(y,liftering=False,compression=False,window=False)
+        chroma, pitchgram,pitchgram_cqt = features.crpChroma(y,liftering=False,compression=False,window=False)
 
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
     data["chroma"] = (chroma,chroma_params)
-    data["cqt"] = (C,{})
+    data["pitchgram_cqt"] = (pitchgram_cqt,{"info":"unprocessed pitchgram derived from cqt"})
     # apply prefilter
     filter_type = params.get("prefilter")
     chroma_smoothed = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
-    
-    # apply RMS thresholding
-    rms_db = features.computeRMS(y)
-    chroma_smoothed[:,rms_db < -50] = -1/12
-    data["chroma_prefiltered"] = (chroma_smoothed,chroma_params)
 
     for alphabet in ["majmin","sevenths"]:
         ## pattern matching ##         
         correlation,labels = features.computeCorrelation(chroma_smoothed,inner_product=True,template_type=alphabet)
-        data["correlation"] = (correlation,{"info":"cross-correlation with templates"})
-        ## postfilter ##
-        filter_type = params.get("postfilter")
-        correlation_smoothed = features.applyPostfilter(correlation,labels,filter_type,**params)
         
+        # apply RMS thresholding
+        rms_db = features.computeRMS(y)
+        mask = rms_db < -50
+        correlation[:,mask] = 0.0
+        correlation[-1,mask] = 1.0
+
+        data["chroma_prefiltered"] = (chroma_smoothed,chroma_params)
+        data["correlation"] = (correlation,{"info":"cross-correlation with templates"})
+
+        ## postfiltering using HMM ##
+        # load pretrained state transition probability matrix or use uniform state transition
+        if params.get("use_chord_statistics"):
+            global script_directory
+            model_path = os.path.join(script_directory,"models","state_transitions",f"A_{alphabet}_{split}.npy")
+            A = np.load(model_path,allow_pickle=True)
+        else:
+            p = params.get("transition_prob",0.1)
+            A = features.uniform_transition_matrix(p,len(labels)) 
+            
+        B_O = correlation / (np.sum(correlation,axis=0) + np.finfo(float).tiny) # likelyhood matrix
+        C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
+        correlation_smoothed, _, _, _ = features.viterbi_log_likelihood(A, C, B_O)
+
         ## decode correlation matrix ##
         if alphabet == "majmin":
             chord_sequence = [labels[i] for i in np.argmax(correlation_smoothed[:24,:],axis=0)]   
@@ -139,17 +153,21 @@ def transcribeTemplate(y,data,metadata,params):
         metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
     return 
 
-def transcribeCPSS(filepath,data,metadata,classifier):
+def transcribeCPSS(filepath,split,data,metadata,classifier):
     y = utils.loadAudiofile(filepath)
-    chroma = features.crpChroma(y,nCRP=33)
-    t_chroma = utils.timeVector(chroma.shape[1],hop_length=2048)
-    hcdf = pitchspace.computeHCDF(chroma,prefilter_length=7,use_cpss=False)
-    ## thresholding
+    # chroma, pitchgram, pitchgram_cqt  = features.crpChroma(y,nCRP=33,window=True)
+    chroma = features.deepChroma(filepath,split)
+    t_chroma = utils.timeVector(chroma.shape[1],hop_length=2205)
+    hcdf = pitchspace.computeHCDF(chroma,prefilter_length=5,use_cpss=False)
+    
+    ## thresholding parameters
     threshold = 0.3
     min_distance = 2
+
+    ## Find stable regions in the chromagram
     gate = np.zeros_like(hcdf)
     gate[hcdf < threshold] = 1
-    chroma_indices = []
+    stable_regions = []
     start_index = 0
 
     for i, value in enumerate(gate):
@@ -159,48 +177,81 @@ def transcribeCPSS(filepath,data,metadata,classifier):
         elif start_index is not None:
             # check if the interval is long enough
             if i - start_index > min_distance: 
-                chroma_indices.append((start_index, i-1))
+                stable_regions.append((start_index, i-1))
             start_index = None
     # check if last index is still ongoing
     if start_index is not None:
-        chroma_indices.append((start_index, len(gate) - 1))
+        stable_regions.append((start_index, len(gate) - 1))
 
     # apply prefilter
     filter_type = params.get("prefilter")
     chroma = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
-    data["chroma"] = (chroma,{"hop_length":2048,"fs":22050})
 
-    # No chord until first stable region
-    est_cpss_intervals = [[0,t_chroma[chroma_indices[0][0]]]]
-    est_cpss_labels = ["N"]
+    data["chroma"] = (chroma,{"hop_length":2205,"fs":22050}) # DCP
+    #data["pitchgram_cqt"] = (pitchgram_cqt,{"info":"unprocessed pitchgram derived from cqt"})
+    correlation, labels = features.computeCorrelation(chroma,template_type="sevenths")
 
-    for x in chroma_indices:
-        chroma_median = np.median(chroma[:,x[0]:x[1]],axis=1)
-        label, _ = classifier.classify(chroma_median)
-        
-        t_start = t_chroma[x[0]]
-        t_stop = t_chroma[x[1]]
-        # check time difference to last stable region
-        dt = t_start - est_cpss_intervals[-1][1]
-        if dt < 1:
-            # adjust intervals
-            t_start -= dt/2
-            est_cpss_intervals[-1][1] += dt/2
-        else:
-            # add no chord for the unstable region in between the last and current region
-            est_cpss_labels.append("N")
-            est_cpss_intervals.append([est_cpss_intervals[-1][1],t_start])
-        # add current region
-        est_cpss_intervals.append([t_start, t_stop])
-        est_cpss_labels.append(label)
-        
-    est_cpss_intervals = np.array(est_cpss_intervals)
+    # save the estimation of stable regions only (for visualization)
+    corr_stable = np.zeros_like(correlation)
+    corr_stable[-1,:] = 1.0
+
+    # classify stable regions witch tonal pitch space
+    for (i0, i1) in stable_regions:
+        # find tonal center of stable regions with ~8 seconds context
+        i_a = np.maximum(0,i0-40)
+        i_b = np.minimum(t_chroma.shape[0],i1+40)
+        chroma_regional = np.average(chroma[:, i_a:i_b],axis=1).reshape((12,1))
+        ic_energy = np.zeros((12,))  
+        for i in range(12):
+            # neglect all chromabins that are not part of the diatonic circle -> key_related_chroma
+            pitch_classes = np.roll([1,0,1,0,1,1,0,1,0,1,0,1],i)
+            key_related_chroma = np.multiply(chroma_regional, np.reshape(pitch_classes, (12,1))) 
+            ic_energy[i] = np.sum(features.computeIntervalCategories(key_related_chroma), axis=0)
+        key_index = np.argmax(ic_energy)
+
+        # classify the average chromavector of the stable region
+        index = classifier.classify(np.average(chroma[:, i0:i1],axis=1),key_index)
+        if index is not None:
+            correlation[:, i0:i1] = 0.0
+            correlation[index, i0:i1] = 1.0
+            corr_stable[index, i0:i1] = 1.0
+
+    # decode estimation of stable regions
+    chord_sequence = [labels[i] for i in np.argmax(corr_stable,axis=0)] 
+    est_intervals_cpss,est_labels_cpss = utils.createChordIntervals(t_chroma,chord_sequence)
+
+    ## viterbi smoothing 
+    # load pretrained state transition probability matrix or use uniform state transition
+    if params.get("use_chord_statistics"):
+        global script_directory
+        model_path = os.path.join(script_directory,"models","state_transitions",f"A_sevenths_{split}.npy")
+        A = np.load(model_path,allow_pickle=True)
+    else:
+        p = params.get("transition_prob",0.1)
+        A = features.uniform_transition_matrix(p,len(labels)) 
+
+    # apply RMS thresholding, force No chord if RMS is below threshold
+    rms_db = features.computeRMS(y,hop_length=2205)
+    mask = rms_db < -50
+    correlation[:,mask] = 0.0
+    correlation[-1,mask] = 1.0    
+
+    B_O = correlation / (np.sum(correlation,axis=0) + np.finfo(float).tiny) # likelyhood matrix
+    C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
+    correlation_smoothed, _, _, _ = features.viterbi_log_likelihood(A, C, B_O)
+
+    chord_sequence = [labels[i] for i in np.argmax(correlation_smoothed,axis=0)] 
+    est_intervals,est_labels = utils.createChordIntervals(t_chroma,chord_sequence)
+    
+    data[f"intervals_cpss"] = (est_intervals_cpss,{"info":"estimated chord intervals with pitch space"})
+    data[f"labels_cpss"] = (est_labels_cpss,{"info":"estimated chord labels with pitch space"})
+    data[f"refined_intervals"] = (est_intervals,{"info":"estimated chord intervals"})
+    data[f"refined_labels"] = (est_labels,{"info":"estimated chord labels"})
+
     # save results
     for alphabet in ["majmin","sevenths"]:
-        data[f"{alphabet}_intervals"] = (est_cpss_intervals,{"info":"estimated chord intervals"})
-        data[f"{alphabet}_labels"] = (est_cpss_labels,{"info":"estimated chord labels"})
         try:
-            score,seg_score = utils.evaluateTranscription(est_cpss_intervals,est_cpss_labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
+            score,seg_score = utils.evaluateTranscription(est_intervals,est_labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
         except Exception as e:
             print(e)
             score = 0.01
@@ -219,9 +270,6 @@ if __name__ == "__main__":
             value = "None"
         file.attrs.create(str(key), value)
 
-    if params.get("transcriber") == "cpss":
-        classifier = pitchspace.Classifier()
-
     if isinstance(params["dataset"], list):
         dataset_list = params["dataset"]
     else:
@@ -230,27 +278,35 @@ if __name__ == "__main__":
     for datasetname in dataset_list:
         dataset = dataloader.Dataloader(datasetname,base_path=dataset_path,source_separation=params["source_separation"])
         file.create_group(datasetname)
-        for fold in range(1,9):
-            for track_id in tqdm(dataset.getExperimentSplits(fold),desc=f"fold {fold}/8"): 
+        for split in range(1,9):
+            if params["transcriber"] == "cpss":
+                try:
+                    classifier = pitchspace.CPSS_Classifier("sevenths",split=split) # TODO: train 8 models
+                except FileNotFoundError:
+                    # Fall back to model 1 until all models are trained!
+                    classifier = pitchspace.CPSS_Classifier("sevenths",split=1)
+            for track_id in tqdm(dataset.getExperimentSplits(split),desc=f"split {split}/8"): 
                 metadata = {} # dictionary for additional track information
                 data = {} # dictionary for track related data and metadata
 
                 # Load audiofile and ground truth annotations
                 metadata["name"] = dataset.getTitle(track_id)
+                metadata["track_id"] = track_id
+                metadata["split"] = split
                 filepath,annotationpath = dataset[track_id]
                 ref_intervals,ref_labels = utils.loadChordAnnotations(annotationpath)
                 data["ref_intervals"] = (ref_intervals,{"info":"ground truth intervals"})
                 data["ref_labels"] = (ref_labels,{"info":"ground truth labels"})
 
                 if params["transcriber"] == "template":
-                    y = utils.loadAudiofile(filepath)
-                    transcribeTemplate(y,data,metadata,params)
+                    transcribeTemplate(filepath,split,data,metadata,params)
                 elif params["transcriber"] == "madmom":
-                    transcribeDeepChroma(filepath,fold,data,metadata)
+                    transcribeDeepChroma(filepath,split,data,metadata)
                 elif params["transcriber"] == "cpss":
-                    transcribeCPSS(filepath,data,metadata,classifier)
+                    transcribeCPSS(filepath,split,data,metadata,classifier)
                 # save results
                 saveResults(file,track_id,metadata,data,datasetname)
-
+                break
+            break
     file.close()
     print(f"DONE")

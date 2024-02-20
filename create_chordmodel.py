@@ -14,7 +14,7 @@ if __name__ == "__main__":
     # create a default path 
     script_directory = os.path.dirname(os.path.abspath(__file__))
 
-    for split in range(1,9):
+    for split in tqdm(range(9),desc="split"): 
         chromadata = {}
         filepath = os.path.join(script_directory, "models","chromadata",f"chromadata_{split}.hdf5")
         with  h5py.File(filepath,"r") as file:
@@ -32,7 +32,7 @@ if __name__ == "__main__":
         for key_index in range(12):
             chordmodels = []
             # create the triads for all major keys  
-            for i,qual in tqdm(zip(shift,["maj","min","min","maj","maj","min"]),desc="triads",total=7):
+            for i,qual in tqdm(zip(shift,["maj","min","min","maj","maj","min"]),desc=f"key {key_index}",total=7):
                 chroma = np.roll(chromadata[qual],key_index + i,axis=0)
                 # transform onto pitchspace 
                 F,FR,TR,_ = pitchspace.computeCPSSfeatures(chroma)

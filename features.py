@@ -77,22 +77,23 @@ def computeRMS(y, fs=22050, hop_length=2048):
     np.clip(rms, -80, 0, out=rms)
     return rms
 
-def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=False,compression=True,liftering=True,norm="l1",clip=True):
+def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compression=True,liftering=True,norm="l1",clip=True):
     """compute Chroma DCT-Reduced Log Pitch feature from an audio signal"""
     bins_per_octave = 36
-    octaves = 8
+    octaves = 7
     midi_start = 24
 
     estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
-    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(12),filter_scale=1,
+    C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midi_start),filter_scale=1,
                         bins_per_octave=bins_per_octave,n_bins=bins_per_octave*octaves,
-                        hop_length=hop_length, sr=fs, tuning=-estimated_tuning,gamma=0))
+                        hop_length=hop_length, sr=fs, tuning=estimated_tuning,gamma=0))
     
     # pick every third coefficient from oversampled and tuned cqt
-    pitchgram_cqt = EPS * np.ones((octaves*12,C.shape[1])) 
+    bins_per_octave = 12
+    pitchgram_cqt = EPS * np.ones((octaves*bins_per_octave, C.shape[1])) 
     
-    # pitchgram window function
-    for note in range(midi_start,midi_start+12*octaves):
+    # pitchgram window function , mu=60 , sigma +- 15 notes
+    for note in range(midi_start, midi_start + octaves*bins_per_octave):
         if window:
             # weight and pick every third amplitude value
             pitchgram_cqt[note - midi_start,:] = np.exp(-(note-60)**2 / (2* 15**2)) * C[(note-midi_start)*3,:] 
@@ -286,8 +287,13 @@ def applyPostfilter(correlation,labels,filter_type,**params):
         N = params.get("postfilter_length",4)
         correlation_smoothed = median_filter(correlation, size=(1, N))
     elif filter_type == "hmm":
-        p = params.get("transition_prob",0.1)
-        A = uniform_transition_matrix(p,len(labels)) # state transition probability matrix
+        # load pretrained state transition probability matrix or use uniform state transition
+        if params.get("model_path",None):
+            A = np.load(params.get("model_path"),allow_pickle=True)
+        else:
+            p = params.get("transition_prob",0.1)
+            A = uniform_transition_matrix(p,len(labels)) 
+            
         B_O = correlation / (np.sum(correlation,axis=0) + EPS) # likelyhood matrix -> quasi normalized inner product
         C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
         correlation_smoothed, _, _, _ = viterbi_log_likelihood(A, C, B_O)
