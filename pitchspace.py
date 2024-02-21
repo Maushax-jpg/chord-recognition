@@ -128,7 +128,7 @@ class CPSS_Classifier():
         self._model = self.loadChordmodel(filepath, alphabet, split)
 
     def loadChordmodel(self,filepath,alphabet,split):
-        path = f"{filepath}/cpss_{alphabet}_{split}.npy"
+        path = f"{filepath}/cpss_{alphabet}_dcp.npy"
         return np.load(path,allow_pickle=True)[()]
 
     def computeLikelihoods(self,chromavector,key_index):

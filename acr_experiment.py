@@ -6,7 +6,6 @@ import features
 import numpy as np
 import h5py
 from tqdm import tqdm
-import madmom
 import pitchspace
 
 # create a default path 
@@ -41,6 +40,7 @@ def parse_arguments():
     return vars(args)
 
 def transcribeDeepChroma(filepath,fold,data,metadata):
+    import madmom
     chroma = features.deepChroma(filepath,fold)
     chromadata = {"fs":22050,"hop_length":2205}
     chord_processor = madmom.features.chords.DeepChromaChordRecognitionProcessor()
@@ -158,11 +158,11 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     # chroma, pitchgram, pitchgram_cqt  = features.crpChroma(y,nCRP=33,window=True)
     chroma = features.deepChroma(filepath,split)
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2205)
-    hcdf = pitchspace.computeHCDF(chroma,prefilter_length=5,use_cpss=False)
+    hcdf = pitchspace.computeHCDF(chroma,prefilter_length=3,use_cpss=False)
     
     ## thresholding parameters
     threshold = 0.3
-    min_distance = 2
+    min_distance = 1
 
     ## Find stable regions in the chromagram
     gate = np.zeros_like(hcdf)
@@ -224,7 +224,7 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     # load pretrained state transition probability matrix or use uniform state transition
     if params.get("use_chord_statistics"):
         global script_directory
-        model_path = os.path.join(script_directory,"models","state_transitions",f"A_sevenths_{split}.npy")
+        model_path = os.path.join(script_directory,"models","state_transitions",f"A_sevenths.npy")
         A = np.load(model_path,allow_pickle=True)
     else:
         p = params.get("transition_prob",0.1)
@@ -233,9 +233,12 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     # apply RMS thresholding, force No chord if RMS is below threshold
     rms_db = features.computeRMS(y,hop_length=2205)
     mask = rms_db < -50
-    correlation[:,mask] = 0.0
-    correlation[-1,mask] = 1.0    
-
+    try:
+        correlation[:,mask] = 0.0
+        correlation[-1,mask] = 1.0    
+    except IndexError:
+        # ignore mismatch between rms_db and chroma
+        pass
     B_O = correlation / (np.sum(correlation,axis=0) + np.finfo(float).tiny) # likelyhood matrix
     C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
     correlation_smoothed, _, _, _ = features.viterbi_log_likelihood(A, C, B_O)
@@ -280,11 +283,7 @@ if __name__ == "__main__":
         file.create_group(datasetname)
         for split in range(1,9):
             if params["transcriber"] == "cpss":
-                try:
-                    classifier = pitchspace.CPSS_Classifier("sevenths",split=split) # TODO: train 8 models
-                except FileNotFoundError:
-                    # Fall back to model 1 until all models are trained!
-                    classifier = pitchspace.CPSS_Classifier("sevenths",split=1)
+                classifier = pitchspace.CPSS_Classifier("sevenths",split=split) 
             for track_id in tqdm(dataset.getExperimentSplits(split),desc=f"split {split}/8"): 
                 metadata = {} # dictionary for additional track information
                 data = {} # dictionary for track related data and metadata
@@ -306,7 +305,5 @@ if __name__ == "__main__":
                     transcribeCPSS(filepath,split,data,metadata,classifier)
                 # save results
                 saveResults(file,track_id,metadata,data,datasetname)
-                break
-            break
     file.close()
     print(f"DONE")

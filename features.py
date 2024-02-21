@@ -5,10 +5,8 @@ from scipy.ndimage import median_filter
 from scipy.stats import pearsonr
 import utils
 import os
-import madmom
 
 EPS = np.finfo(float).eps # machine epsilon
-
 
 def computeIntervalCategories(chroma):
     if chroma.shape[0] != 12:
@@ -127,6 +125,7 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compress
 
 def deepChroma(filepath,split_nr=1):
     """compute a chromagram with the deep chroma processor"""
+    import madmom
     model_path =  os.path.join(os.path.split(__file__)[0],"models","deepchroma",f"chroma_dnn_{split_nr}.pkl")
     if split_nr is not None:
         dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=[model_path])
