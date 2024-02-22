@@ -75,7 +75,7 @@ def load_trackdata(filepath,track_id,dataset):
             est_sevenths = np.copy(subgrp.get("sevenths_intervals")), sevenths_labels
 
         # convert to numpy arrays and pack to tuples
-        chromadata = t_chroma, np.copy(subgrp.get("pitchgram_cqt",np.array([]))), np.copy(subgrp.get("chroma_prefiltered",chroma))
+        chromadata = t_chroma, np.copy(subgrp.get("hcdf",np.array([]))),np.copy(subgrp.get("gate",np.array([]))), np.copy(subgrp.get("chroma_prefiltered",chroma))
         ground_truth = np.copy(subgrp.get("ref_intervals")), ref_labels
     return track_data,chromadata,ground_truth,est_majmin,est_sevenths
 
@@ -185,7 +185,7 @@ class visualizationApp():
 
     def plot_results(self,*args):
         plt.close("all")
-        t_chroma,cqt,chroma_prefiltered = self.chromadata
+        t_chroma,hcdf,gate,chroma_prefiltered = self.chromadata
         ref_intervals,ref_labels = self.ground_truth
         est_majmin_intervals,est_majmin_labels = self.est_majmin
         est_sevenths_estimation_intervals,est_sevenths_estimation_labels = self.est_sevenths  
@@ -196,7 +196,7 @@ class visualizationApp():
         if not self.plot_cqt.value:
             fig,((ax_1,ax_11),(ax_2,ax_21)) = plt.subplots(2,2,height_ratios=(3,5),width_ratios=(20,.3),figsize=(9,5))
         else:
-            fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,3,9),width_ratios=(20,.3),figsize=(7,9))
+            fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,3,3),width_ratios=(20,.3),figsize=(7,7))
         # create chord annotation plot
 
         utils.plotChordAnnotations(ax_1,ref_intervals,ref_labels,time_interval=time_interval,y_0=6)
@@ -224,18 +224,9 @@ class visualizationApp():
             fig.colorbar(img,cax=ax_21)
             # plot cqt
             i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
-            img = librosa.display.specshow(librosa.amplitude_to_db(cqt[:,i0:i1],ref=np.max(cqt[:,i0:i1])),
-                                        x_coords=t_chroma[i0:i1],
-                                        x_axis="time",
-                                        y_axis='cqt_hz',
-                                        cmap="viridis",
-                                        fmin=librosa.midi_to_hz(36),
-                                        bins_per_octave=12,
-                                        ax=ax_3,
-                                        vmin=-70,
-                                        vmax=0)
-            cbar = fig.colorbar(img,cax=ax_31)
-            cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
+            ax_3.plot(t_chroma[i0:i1],hcdf[i0:i1])
+            ax_3.plot(t_chroma[i0:i1],gate[i0:i1])
+            ax_3.set_xlim(time_interval)
 
         # create a label for the estimates
         xticks = np.linspace(time_interval[0],time_interval[1],21)

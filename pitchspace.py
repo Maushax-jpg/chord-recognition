@@ -122,17 +122,19 @@ class ChordModel:
         return logpdf
 
 class CPSS_Classifier():
-    def __init__(self,alphabet="majmin",filepath="/home/max/ET-TI/Masterarbeit/chord-recognition/models/cpss"): 
+    def __init__(self,alphabet="majmin",filepath=None): 
         self._labels = utils.createChordTemplates(alphabet)[1]
         self._key_templates = utils.createKeyTemplates()
-        self._model = self.loadChordmodel(filepath, alphabet)
+        self._model = self.loadChordmodel(filepath,alphabet)
 
     def loadChordmodel(self,filepath,alphabet):
-        path = f"{filepath}/cpss_{alphabet}_dcp.npy"
+        if filepath is None:
+            raise ValueError("Please specify path to model")
+        path = filepath+f"/cpss_{alphabet}_dcp.npy"
         return np.load(path,allow_pickle=True)[()]
 
     def computeLikelihoods(self,chromavector,key_index):
-        likelyhood = np.zeros((len(self._labels),), dtype=float)
+        likelyhood = np.full((len(self._labels),),-np.inf ,dtype=float)
         # compute feature vector for the selected key
         F,FR,TR,_ = computeCPSSfeatures(chromavector)
         x = (
@@ -151,9 +153,4 @@ class CPSS_Classifier():
 
     def classify(self, chromavector,key_index):
         likelyhood = self.computeLikelihoods(chromavector,key_index=key_index)
-        index = np.argmax(likelyhood)
-        # negative likelyhood -> this occurs if there is no good fit for the chromavector
-        if likelyhood[index] > 0:
-            return index
-        else:
-            return None
+        return np.argmax(likelyhood)

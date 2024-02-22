@@ -132,9 +132,7 @@ def createChordTemplates(template_type="majmin"):
             templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
-    for i in range(0,12,2):
-        templates[i,chord_index] = 1/6
-
+    templates[:,chord_index] = np.finfo(float).eps * np.random.random((12,))
     chord_labels.append("N")
     return templates,chord_labels
 
@@ -330,7 +328,7 @@ def plotPitchspace():
     fig.tight_layout(w_pad=0.5,h_pad=1)    
     return fig,ax
 
-def create_violinplot(ax,data,xlabels,bodycolor='cyan'):
+def create_violinplot(ax,data,xlabels,bodycolor='cyan',ylim=(0,100)):
     violin_parts = ax.violinplot(data,showmeans=False, showmedians=True,
             showextrema=False)
     violin_parts["cmedians"].set_color("red")
@@ -340,8 +338,8 @@ def create_violinplot(ax,data,xlabels,bodycolor='cyan'):
                 showfliers=True,medianprops=dict(linestyle=None,linewidth=0),
                 flierprops=dict(markerfacecolor='k', marker='o',markersize=1),
                 widths=0.1)
-    ax.set_yticks(np.arange(0,110,10))
-    ax.set_ylim(0,100)
+    ax.set_yticks(np.arange(ylim[0],ylim[1],10))
+    ax.set_ylim(ylim)
     ax.set_ylabel("F-score in %")
     ax.set_xticks(np.arange(1, len(xlabels) + 1), labels=xlabels)
     ax.set_xlim(0.5, len(xlabels) + 0.5);
