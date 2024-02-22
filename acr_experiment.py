@@ -25,13 +25,6 @@ def parse_arguments():
                         help='select template based Recognition or use madmoms deep Chroma processor')
     parser.add_argument('--chroma_type', choices=['crp','dcp'], default='crp', 
                         help='select chromagram type')
-    parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="none",
-                         help='Select source separation type')
-    parser.add_argument('--prefilter', choices=[None, 'median', 'rp'], default='median', help='Select Prefilter type')
-    parser.add_argument('--prefilter_length', type=int, default=7, help='Prefilter length')
-    parser.add_argument('--embedding', type=int, default=25, help='Embedding value')
-    parser.add_argument('--neighbors', type=int, default=50, help='Neighbours value')
-    parser.add_argument('--postfilter', choices=[None, 'hmm', 'median'], default='hmm', help='select Postfilter type')
     parser.add_argument('--use_chord_statistics', type=bool, default=True, help='use state transition matrix from data')
     parser.add_argument('--transition_prob', type=float, default=0.2, help='self-transition probability for a chord')
     args = parser.parse_args()
@@ -154,7 +147,6 @@ def transcribeTemplate(filepath,split,data,metadata,params):
 
 def transcribeCPSS(filepath,split,data,metadata,classifier):
     y = utils.loadAudiofile(filepath)
-    # chroma, pitchgram, pitchgram_cqt  = features.crpChroma(y,nCRP=33,window=True)
     chroma = features.deepChroma(filepath,split)
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2205)
     hcdf = pitchspace.computeHCDF(chroma,prefilter_length=3,use_cpss=False)
@@ -278,11 +270,11 @@ if __name__ == "__main__":
         dataset_list = [params["dataset"]]     
 
     for datasetname in dataset_list:
-        dataset = dataloader.Dataloader(datasetname,base_path=dataset_path,source_separation=params["source_separation"])
+        dataset = dataloader.Dataloader(datasetname,base_path=dataset_path,source_separation="none")
         file.create_group(datasetname)
+        if params["transcriber"] == "cpss":
+            classifier = pitchspace.CPSS_Classifier("sevenths") 
         for split in range(1,9):
-            if params["transcriber"] == "cpss":
-                classifier = pitchspace.CPSS_Classifier("sevenths",split=split) 
             for track_id in tqdm(dataset.getExperimentSplits(split),desc=f"split {split}/8"): 
                 metadata = {} # dictionary for additional track information
                 data = {} # dictionary for track related data and metadata

@@ -122,12 +122,12 @@ class ChordModel:
         return logpdf
 
 class CPSS_Classifier():
-    def __init__(self,alphabet="majmin",filepath="/home/max/ET-TI/Masterarbeit/chord-recognition/models/cpss",split=1): 
+    def __init__(self,alphabet="majmin",filepath="/home/max/ET-TI/Masterarbeit/chord-recognition/models/cpss"): 
         self._labels = utils.createChordTemplates(alphabet)[1]
         self._key_templates = utils.createKeyTemplates()
-        self._model = self.loadChordmodel(filepath, alphabet, split)
+        self._model = self.loadChordmodel(filepath, alphabet)
 
-    def loadChordmodel(self,filepath,alphabet,split):
+    def loadChordmodel(self,filepath,alphabet):
         path = f"{filepath}/cpss_{alphabet}_dcp.npy"
         return np.load(path,allow_pickle=True)[()]
 
