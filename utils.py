@@ -7,7 +7,6 @@ from matplotlib.patches import Rectangle
 from collections import namedtuple
 import pitchspace
 from matplotlib.patches import Ellipse
-import os.path
 import matplotlib.transforms as transforms
 
 

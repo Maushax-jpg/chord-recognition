@@ -23,7 +23,7 @@ def parse_arguments():
                         help="select dataset or ommit to use all datasets")
     parser.add_argument('--transcriber', choices=['template', 'madmom','cpss'], default='template', 
                         help='select template based Recognition or use madmoms deep Chroma processor')
-    parser.add_argument('--chroma_type', choices=['CRP','Clog','CQT'], default='CRP', 
+    parser.add_argument('--chroma_type', choices=['crp','dcp'], default='crp', 
                         help='select chromagram type')
     parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="none",
                          help='Select source separation type')
@@ -91,15 +91,14 @@ def transcribeTemplate(filepath,split,data,metadata,params):
     chroma_type = params.get("chroma_type")
 
     chroma_params = {"hop_length":2048,"fs":22050,"type":chroma_type}
-    if chroma_type == "CRP":
+    if chroma_type == "crp":
         chroma_params["nCRP"] = 33
         chroma_params["eta"] = 100
         chroma_params["window"] = True
         chroma, pitchgram,pitchgram_cqt = features.crpChroma(y,nCRP=33,eta=100,liftering=True,window=True)
-    elif chroma_type == "Clog":
-        chroma_params["eta"] = 100
-        chroma_params["window"] = True
-        chroma, pitchgram,pitchgram_cqt = features.crpChroma(y,eta=100,liftering=False,window=True)
+    elif chroma_type == "dcp":
+        chroma_params["hop_length"] = 2205
+        chroma, pitchgram,pitchgram_cqt = features.deepChroma(filepath,split)
     else:
         chroma, pitchgram,pitchgram_cqt = features.crpChroma(y,liftering=False,compression=False,window=False)
 
@@ -127,7 +126,7 @@ def transcribeTemplate(filepath,split,data,metadata,params):
         # load pretrained state transition probability matrix or use uniform state transition
         if params.get("use_chord_statistics"):
             global script_directory
-            model_path = os.path.join(script_directory,"models","state_transitions",f"A_{alphabet}_{split}.npy")
+            model_path = os.path.join(script_directory,"models","state_transitions",f"A_{alphabet}.npy")
             A = np.load(model_path,allow_pickle=True)
         else:
             p = params.get("transition_prob",0.1)
@@ -185,11 +184,11 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
 
     # apply prefilter
     filter_type = params.get("prefilter")
-    chroma = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
+    # chroma = features.applyPrefilter(t_chroma,chroma,filter_type,**params)
 
     data["chroma"] = (chroma,{"hop_length":2205,"fs":22050}) # DCP
     #data["pitchgram_cqt"] = (pitchgram_cqt,{"info":"unprocessed pitchgram derived from cqt"})
-    correlation, labels = features.computeCorrelation(chroma,template_type="sevenths")
+    correlation, labels = features.computeCorrelation(chroma,inner_product=True,template_type="sevenths")
 
     # save the estimation of stable regions only (for visualization)
     corr_stable = np.zeros_like(correlation)
@@ -224,7 +223,7 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     # load pretrained state transition probability matrix or use uniform state transition
     if params.get("use_chord_statistics"):
         global script_directory
-        model_path = os.path.join(script_directory,"models","state_transitions",f"A_sevenths.npy")
+        model_path = os.path.join(script_directory,"models","state_transitions",f"sevenths_20.npy")
         A = np.load(model_path,allow_pickle=True)
     else:
         p = params.get("transition_prob",0.1)
