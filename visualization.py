@@ -6,9 +6,8 @@ import utils
 import numpy as np
 from collections import namedtuple
 import matplotlib.pyplot as plt
-import mir_eval
+from dataloader import DATASETS
 import librosa.display
-from scipy.stats import pearsonr
 
 
 trackdata = namedtuple('track','track_id name dataset majmin_wscr majmin_seg majmin_f sevenths_wscr sevenths_seg sevenths_f')
@@ -18,7 +17,7 @@ def load_results(filepath):
     """reads all scores in a .hdf5 file and returns a list of trackdata and a list of the used datasets"""
     results = []
     with  h5py.File(filepath,"r") as file:
-        datasets = file.attrs.get("dataset")
+        datasets = file.attrs.get("dataset",DATASETS)
 
         if datasets is None:
             raise KeyError("Corrupt result file! no datasets are specified in the header!")
@@ -78,7 +77,7 @@ def load_trackdata(filepath,track_id,dataset):
             est_sevenths = np.copy(subgrp.get("sevenths_intervals")), sevenths_labels
 
         # convert to numpy arrays and pack to tuples
-        chromadata = t_chroma, np.copy(subgrp.get("pitchgram_cqt",np.array([]))), np.copy(subgrp.get("chroma_prefiltered",chroma))
+        chromadata = t_chroma, np.copy(subgrp.get("pitchgram_cqt",np.array([]))), np.copy(subgrp.get("chroma",chroma))
         ground_truth = np.copy(subgrp.get("ref_intervals")), ref_labels
     return track_data,chromadata,ground_truth,est_majmin,est_sevenths
 

@@ -8,66 +8,6 @@ import os
 
 EPS = np.finfo(float).eps # machine epsilon
 
-def computeIntervalCategories(chroma):
-    if chroma.shape[0] != 12:
-        raise ValueError("invalid Chromagram shape!")
-    ic = np.zeros((6, chroma.shape[1]), dtype=float)
-
-    for i in range(6):
-        rotated_chroma = np.roll(chroma, shift=i+1, axis=0)
-        ic[i,:] = np.sum(chroma * rotated_chroma, axis=0)
-    return ic
-
-def sumChromaDifferences(chroma):
-    if chroma.shape[0] != 12:
-        raise ValueError("invalid Chromagram shape!")
-    # rearange chroma vector
-    cq_fifth = np.zeros_like(chroma,dtype=float)
-    for q in range(12):
-        cq_fifth[q,:] = chroma[(q * 7) % 12, :]
-
-    gamma_diff = np.zeros_like(chroma,dtype=float)
-    for q in range(12):
-        gamma_diff[q, :] = np.abs(cq_fifth[(q+1) % 12, :] - cq_fifth[q,:]) 
-    # normalize to one
-    gamma = 1- np.sum(gamma_diff,axis=0)/2
-    return gamma
-
-def negativeSlope(chroma):
-    if chroma.shape[0] != 12:
-        raise ValueError("invalid Chromagram shape!")
-    KSPARSE = 0.038461538461538464 # normalization constant
-    gamma = np.zeros(chroma.shape[1],dtype=float)
-    for t in range(chroma.shape[1]):
-        y = np.sort(chroma[:, t])[::-1] # sort descending
-        # linear regression using numpy
-        A = np.vstack([np.arange(12), np.ones((12,))]).T
-        k, _ = np.linalg.lstsq(A, y, rcond=None)[0]
-        #rescaled feature
-        gamma[t] = 1 - np.abs(k)/KSPARSE
-    return gamma
-
-def shannonEntropy(chroma):
-    """calculates the Shannon entropy of a chromagram for every timestep. The chromavector is treated as a random variable."""
-    if chroma.shape[0] != 12:
-        raise ValueError("invalid Chromagram shape!")
-    return -np.sum(np.multiply(chroma,np.log2(chroma+np.finfo(float).eps)), axis=0)/np.log2(12)
-
-def nonSparseness(chroma):
-    if chroma.shape[0] != 12:
-        raise ValueError("invalid Chromagram shape!")
-    norm_l1 = np.linalg.norm(chroma, ord=1,axis=0)
-    norm_l2 = np.linalg.norm(chroma, ord=2,axis=0) + np.finfo(float).eps
-    gamma = 1 - ((np.sqrt(12)-norm_l1/norm_l2) / (np.sqrt(12)-1))
-    return gamma
-
-def flatness(chroma):
-    if chroma.shape[0] != 12:
-        raise ValueError("invalid Chromagram shape!")
-    geometric_mean = np.product(chroma + np.finfo(float).eps, axis=0)**(1/12)
-    arithmetic_mean = np.sum(chroma,axis=0) / 12 + np.finfo(float).eps
-    return geometric_mean/arithmetic_mean
-
 def computeRMS(y, fs=22050, hop_length=2048):
     S,_ = librosa.magphase(librosa.stft(y, n_fft=4096, hop_length=hop_length))
     rms = librosa.feature.rms(S=S, frame_length=4096, hop_length=hop_length)[0]
@@ -75,11 +15,11 @@ def computeRMS(y, fs=22050, hop_length=2048):
     np.clip(rms, -80, 0, out=rms)
     return rms
 
-def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compression=True,liftering=True,norm="l1",clip=True):
+def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compression=True,liftering=True):
     """compute Chroma DCT-Reduced Log Pitch feature from an audio signal"""
     bins_per_octave = 36
-    octaves = 7
-    midi_start = 24
+    octaves = 6
+    midi_start = 36
 
     estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
     C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midi_start),filter_scale=1,
@@ -113,26 +53,9 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compress
     # pitch folding
     crp = pitchgram_energy.reshape(octaves,12,-1) 
     crp = np.sum(crp, axis=0)
-
-    if clip:
-        crp = np.clip(crp,0,None) # clip negative values
-
-    if norm == "l1":
-        crp = crp /np.sum(np.abs(crp) + EPS, axis=0)
-    elif norm == "l2":
-        crp = crp / np.linalg.norm(crp)
+    crp = np.clip(crp,0,None) # clip negative values
+    crp = crp / np.sum(np.abs(crp) + EPS, axis=0)
     return crp, pitchgram_energy, pitchgram_cqt
-
-def deepChroma(filepath,split_nr=1):
-    """compute a chromagram with the deep chroma processor"""
-    import madmom
-    model_path =  os.path.join(os.path.split(__file__)[0],"models","deepchroma",f"chroma_dnn_{split_nr}.pkl")
-    if split_nr is not None:
-        dcp = madmom.audio.chroma.DeepChromaProcessor(fmin=30, fmax=5500, unique_filters=False,models=[model_path])
-    else:
-        dcp = madmom.audio.chroma.DeepChromaProcessor()
-    chroma = dcp(filepath).T
-    return chroma
 
 def computeSSM(chroma,M=1):
     """computation of a self-similarity matrix from a chromagram with (optional) temporal embedding.
@@ -166,7 +89,7 @@ def computeWeightMatrix(chroma,M=15,neighbors=50):
     weight_matrix = ssm*recurrence_plot
     return weight_matrix,ssm,ssm_smoothed
 
-def computeCorrelation(chroma,inner_product=True,template_type="majmin"):
+def computeCorrelation(chroma,inner_product=False,template_type="majmin"):
     templates,labels = utils.createChordTemplates(template_type=template_type) 
     if inner_product:
         correlation = np.matmul(templates.T,chroma)

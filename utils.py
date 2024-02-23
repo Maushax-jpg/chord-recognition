@@ -5,11 +5,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from collections import namedtuple
-import pitchspace
 from matplotlib.patches import Ellipse
-import os.path
 import matplotlib.transforms as transforms
 
+NO_CHORD = np.random.random((12,)) * np.finfo(float).eps
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals accident')
 """ 
@@ -133,9 +132,8 @@ def createChordTemplates(template_type="majmin"):
             templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
-    for i in range(0,12,2):
-        templates[i,chord_index] = 1/6
 
+    templates[:,chord_index] = NO_CHORD
     chord_labels.append("N")
     return templates,chord_labels
 
@@ -220,116 +218,6 @@ def plotRecurrencePlots(t_chroma,W,SSM,SSM_M):
     plotSSM(ax1,t_chroma,SSM,time_interval=(0,30))
     plotSSM(ax2,t_chroma,SSM_M,time_interval=(0,30))
     return fig
-
-def scaleVector(x,y,alpha):
-    m,phi = cartesian2polar(x,y)
-    m_new = m * alpha
-    return polar2cartesian(m_new,phi)
-
-def cartesian2polar(x,y,angle='rad'):
-    if angle == 'deg':
-        return np.sqrt(x**2+y**2),np.arctan2(y,x)*180/np.pi
-    else:
-        return np.sqrt(x**2+y**2),np.arctan2(y,x)
-
-def polar2cartesian(m,phi,angle='rad'):
-    if angle == 'deg':
-        return m*np.cos(phi),m*np.sin(phi*np.pi/180)
-    else:
-        return m*np.cos(phi),m*np.sin(phi)
-    
-def drawLabel(axis,z,note_label,radius = 1.25,fontsize=8):
-    x,y= scaleVector(z.real,z.imag,radius)
-    axis.text(x,y,note_label,rotation=np.arctan2(y,x)*180/np.pi-90,
-              fontsize=fontsize,horizontalalignment='center',verticalalignment='center')
-
-def plotHalftoneGrid(axis,n_ht):
-    axis.plot([-1,1], [0,0], color='grey',linestyle=(0,(5,10)),linewidth=1)
-    axis.plot([0,0], [-1,1], color='grey',linestyle=(0,(5,10)),linewidth=1)
-    for i in np.linspace(0,n_ht,n_ht+1):
-        ht = np.exp(-1j*2*np.pi*(i/n_ht))*1j
-        axis.plot(ht.real,ht.imag,'o',color='grey',markersize=1.5)
-
-def plotCircleF(ax):
-    plotHalftoneGrid(ax, 84)
-    for pitch_class in pitch_classes:
-        n_f = pitchspace.sym3(49 * pitch_class.chromatic_index, 84, 0)
-        rho_F = np.exp(-1j * 2 * np.pi * (n_f / 84)) * 1j
-        ax.plot(rho_F.real, rho_F.imag, 'o', color='k', markersize=3)
-        drawLabel(ax, rho_F, pitch_class.name)
-    ax.axis('off')
-
-def plotCircleFR(ax,pitch_class_index=0):
-    plotHalftoneGrid(ax,48)
-    n_k = pitch_classes[pitch_class_index].num_accidentals
-    ax.axline((0, -.8), (0, .8),linestyle="--",color="grey",alpha=0.5)
-    for pitch_class in pitch_classes:
-        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k)
-        # check if pitch is in fifth related circle
-        if -21 <= (n_f-7*n_k) <= 21:
-            n_fr = pitchspace.sym(n_f-7*n_k, 48)
-            rho_FR = np.exp(-1j*2*np.pi*(n_fr/48))*1j
-            ax.plot(rho_FR.real,rho_FR.imag,'ok',markersize=3)
-            # check if the current key has #'s in it and use enharmonic notes to annotate the correct note
-            if pitch_class.name.find("b") == 1 and pitch_classes[pitch_class_index].accident == "#":
-                drawLabel(ax,rho_FR,enharmonic_notes[pitch_class.name])
-            else:
-                drawLabel(ax,rho_FR,pitch_class.name)
-    ax.axis('off')
-
-def plotCircleTR(ax,pitch_class_index=0):
-    plotHalftoneGrid(ax,24)
-    n_k = pitch_classes[pitch_class_index].num_accidentals
-    for pitch_class in pitch_classes:
-        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k)
-        # check if pitch is in fifth related circle
-        if -21 <= (n_f-7*n_k) <= 21:
-            n_tr = pitchspace.sym(n_f-7*n_k-12,24)
-            rho_TR = np.exp(-1j*2*np.pi*((n_tr)/24))*1j
-            ax.plot(rho_TR.real,rho_TR.imag,'ok',markersize=3)
-            if pitch_class.name.find("b") == 1 and pitch_classes[pitch_class_index].accident == "#":
-                drawLabel(ax,rho_TR,enharmonic_notes[pitch_class.name])
-            else:
-                drawLabel(ax,rho_TR,pitch_class.name)
-
-    ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
-    ax.axis('off')
-
-def plotCircleDR(ax,pitch_class_index=0):
-    plotHalftoneGrid(ax,12)
-    n_k = pitch_classes[pitch_class_index].num_accidentals
-    # ax.text(-1.1,1.2,f"DR({pitch_classes[pitch_class_index].name})",fontsize=8,
-    #           horizontalalignment='center',verticalalignment='center')
-    for pitch_class in pitch_classes:
-        n_f = pitchspace.sym3(49*pitch_class.chromatic_index,84,7*n_k)
-        # check if pitch is in fifth related circle
-        if -21 <= (n_f-7*n_k) <= 21:
-            n_dr = pitchspace.sym(n_f-7*n_k,12)
-            rho_DR = np.exp(-1j*2*np.pi*(n_dr/12))*1j
-            ax.plot(rho_DR.real,rho_DR.imag,'ok',markersize=3)
-            if pitch_class.name.find("b") == 1 and pitch_classes[pitch_class_index].accident == "#":
-                drawLabel(ax,rho_DR,enharmonic_notes[pitch_class.name])
-            else:
-                drawLabel(ax,rho_DR,pitch_class.name)
-  
-    ax.axline((0, -.9), (0, .9),linestyle="--",color="grey",alpha=0.5)
-    ax.axis('off')
-
-def plotPitchspace():
-    n=12
-    fig,ax = plt.subplots(nrows=n, ncols=3, figsize=(3.3,n*1+0.3))
-    ax[0, 0].text(0,2,f"FR",ha='center',va='center',fontsize=12)
-    ax[0, 1].text(0,2,f"TR",ha='center',va='center',fontsize=12)
-    ax[0, 2].text(0,2,f"DR",ha='center',va='center',fontsize=12)
-    for i in range(n):
-        plotCircleFR(ax[i, 0], i)
-        plotCircleTR(ax[i, 1], i)
-        plotCircleDR(ax[i, 2], i)
-        ax[i, 0].text(-2,0,f"{pitch_classes[i].name}",ha='center',va='center',fontsize=12)
-
-    fig.subplots_adjust(left=0.1, top=0.9)
-    fig.tight_layout(w_pad=0.5,h_pad=1)    
-    return fig,ax
 
 def create_violinplot(ax,data,xlabels,bodycolor='cyan'):
     violin_parts = ax.violinplot(data,showmeans=False, showmedians=True,
