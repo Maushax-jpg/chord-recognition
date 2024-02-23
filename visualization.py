@@ -271,40 +271,39 @@ class visualizationApp():
         except IOError as e:
             print(f"An error occurred while processing the file: {e}")
 
-
     def preview_result_file(self):
         """prints out an overview of the groups and subgroups of the loaded hdf5 file"""
-        majmin_f = [x.majmin_f for x in self.trackdata_list]
-        med_f = 100 * np.median(majmin_f)
-        iqr_f = 100 * np.subtract(*np.percentile(majmin_f, [75, 25]))
-
-        majmin_wscr =  [x.majmin_wscr for x in self.trackdata_list]
-        med_wscr = 100 * np.median(majmin_wscr)
-        iqr_wscr = 100 * np.subtract(*np.percentile(majmin_wscr, [75, 25]))
-
-        majmin_seg = [x.majmin_seg for x in self.trackdata_list]
-        med_seg = 100 * np.median(majmin_seg)
-        iqr_seg = 100 * np.subtract(*np.percentile(majmin_seg, [75, 25]))
-
-        sevenths_f = [x.sevenths_f for x in self.trackdata_list]
-        med_f_sevenths = 100 * np.median(sevenths_f)
-        iqr_f_sevenths = 100 * np.subtract(*np.percentile(sevenths_f, [75, 25]))
-
-        sevenths_wscr =  [x.sevenths_wscr for x in self.trackdata_list]
-        med_wscr_sevenths = 100 * np.median(sevenths_wscr)
-        iqr_wscr_sevenths = 100 * np.subtract(*np.percentile(sevenths_wscr, [75, 25]))
-
-        sevenths_seg = [x.sevenths_seg for x in self.trackdata_list]
-        med_seg_sevenths = 100 * np.median(sevenths_seg)
-        iqr_seg_sevenths = 100 * np.subtract(*np.percentile(sevenths_seg, [75, 25]))
-
-        table_md = "### Evaluation Results: Combined dataset\n"
-        table_md += "|eval-scheme| f-score| WSCR| Segmentation |\n| --- | --- |--- |--- |\n"
-        table_md += f"|majmin|{med_f}/{iqr_f:0.1f}|{med_wscr:0.1f}/{iqr_wscr:0.1f}"
-        table_md += f"|{med_seg:0.1f}/{iqr_seg:0.1f}|\n"
-        table_md += f"|sevenths|{med_f_sevenths:0.1f}/{iqr_f_sevenths:0.1f}|{med_wscr_sevenths:0.1f}+/-{iqr_wscr_sevenths:0.1f}"
-        table_md += f"|{med_seg_sevenths:0.1f}/{iqr_seg_sevenths:0.1f}|\n"
+        def computeStatistics(x):
+            return 100*np.median(x),100*np.subtract(*np.percentile(x, [75, 25]))
         
+        def printEvaluationTable(dset):
+            name = dset
+            if dset == "combined":
+                dset = DATASETS
+            majmin_f = [x.majmin_f for x in self.trackdata_list if x.dataset in dset]
+            med_f, iqr_f = computeStatistics(majmin_f)
+            majmin_wscr =  [x.majmin_wscr for x in self.trackdata_list if x.dataset in dset]
+            med_wscr,iqr_wscr = computeStatistics(majmin_wscr)
+            majmin_seg = [x.majmin_seg for x in self.trackdata_list if x.dataset in dset]
+            med_seg, iqr_seg = computeStatistics(majmin_seg)
+            sevenths_f = [x.sevenths_f for x in self.trackdata_list if x.dataset in dset]
+            med_f_sevenths,iqr_f_sevenths = computeStatistics(sevenths_f)
+            sevenths_wscr =  [x.sevenths_wscr for x in self.trackdata_list if x.dataset in dset]
+            med_wscr_sevenths, iqr_wscr_sevenths = computeStatistics(sevenths_wscr)
+            sevenths_seg = [x.sevenths_seg for x in self.trackdata_list if x.dataset in dset]
+            med_seg_sevenths, iqr_seg_sevenths = computeStatistics(sevenths_seg)
+
+            table_md = f"#### {name} dataset\n"
+            table_md += "|eval-scheme| f-score| WSCR| Segmentation |\n| --- | --- |--- |--- |\n"
+            table_md += f"|majmin|{med_f}/{iqr_f:0.1f}|{med_wscr:0.1f}/{iqr_wscr:0.1f}"
+            table_md += f"|{med_seg:0.1f}/{iqr_seg:0.1f}|\n"
+            table_md += f"|sevenths|{med_f_sevenths:0.1f}/{iqr_f_sevenths:0.1f}|{med_wscr_sevenths:0.1f}+/-{iqr_wscr_sevenths:0.1f}"
+            table_md += f"|{med_seg_sevenths:0.1f}/{iqr_seg_sevenths:0.1f}|\n"
+            return table_md
+        table_md = printEvaluationTable("combined")
+        for dset in DATASETS:
+            table_md += printEvaluationTable(dset)
+        # TODO: Tabelle mit Datensatzspezifischen Ergebnissen
         self.output_handle.update(display.Markdown(table_md))
 
     def display_trackdata(self):
