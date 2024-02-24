@@ -119,7 +119,9 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     corr_templates_stable_region = np.copy(corr_stable_region)
     # classify stable regions witch tonal pitch space
     for (i0, i1) in stable_regions:
-        chroma_regional = np.average(chroma[:, i0:i1],axis=1).reshape((12,1))
+        i_a = np.minimum(0,i0 - 40)
+        i_b = np.maximum(0,i1 + 40)
+        chroma_regional = np.average(chroma[:, i_a:i_b],axis=1).reshape((12,1))
         ic_energy = np.zeros((12,))  
         for i in range(12):
             # neglect all chromabins that are not part of the diatonic circle -> key_related_chroma
@@ -159,10 +161,10 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     
     data[f"intervals_cpss"] = (est_intervals_cpss,{"info":"estimated chord intervals with pitch space"})
     data[f"labels_cpss"] = (est_labels_cpss,{"info":"estimated chord labels with pitch space"})
-    data[f"intervals_templates"] = (est_intervals_cpss,{"info":"estimated chord intervals with templates"})
-    data[f"labels_templates"] = (est_labels_cpss,{"info":"estimated chord labels with templates"})
-    data[f"refined_intervals"] = (est_intervals_templates,{"info":"estimated chord intervals"})
-    data[f"refined_labels"] = (est_labels_templates,{"info":"estimated chord labels"})
+    data[f"intervals_templates"] = (est_intervals_templates,{"info":"estimated chord intervals with templates"})
+    data[f"labels_templates"] = (est_labels_templates,{"info":"estimated chord labels with templates"})
+    data[f"refined_intervals"] = (est_intervals,{"info":"estimated chord intervals"})
+    data[f"refined_labels"] = (est_labels,{"info":"estimated chord labels"})
 
     # save results
     for alphabet in ["majmin","sevenths"]:
