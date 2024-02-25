@@ -118,7 +118,7 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compress
         crp = np.clip(crp,0,None) # clip negative values
 
     if norm == "l1":
-        crp = crp /np.sum(np.abs(crp) + EPS, axis=0)
+        crp = crp / np.sum(np.abs(crp) + EPS, axis=0)
     elif norm == "l2":
         crp = crp / np.linalg.norm(crp)
     return crp, pitchgram_energy, pitchgram_cqt
@@ -132,6 +132,9 @@ def deepChroma(filepath,split_nr=1):
     else:
         dcp = madmom.audio.chroma.DeepChromaProcessor()
     chroma = dcp(filepath).T
+    norm = np.sum(np.abs(chroma), axis=0)
+    mask = norm > 0
+    chroma[:,mask] = chroma[:,mask] / norm[mask]
     return chroma
 
 def computeSSM(chroma,M=1):

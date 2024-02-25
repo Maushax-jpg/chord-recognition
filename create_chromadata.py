@@ -29,14 +29,14 @@ def computeCorrelation(chromadata,templates):
 if __name__ == "__main__":
     parser = ArgumentParser(prog='Chromadata extractor', description='creates labeled chromadata from existing chromagrams')
 
-    parser.add_argument('filepath', default=None, help="specify path to .hdf5 file")
     parser.add_argument('chroma',choices=["crp","dcp"])
+    parser.add_argument('filter_type',choices=["max","thresh"])
     args = parser.parse_args()
 
     # create a default path 
     script_directory = os.path.dirname(os.path.abspath(__file__))
     datasetpath = os.path.join(script_directory, "mirdata")
-    outputpath = os.path.join(script_directory, "models","chromadata",f"chromadata_{args.chroma}.hdf5")
+    outputpath = os.path.join(script_directory, "models","chromadata",f"chromadata_{args.chroma}_{args.filter_type}.hdf5")
 
     print(f"create templates for triads_tetrads alphabet")
     templates, labels = utils.createChordTemplates("triads_tetrads")
@@ -88,12 +88,17 @@ if __name__ == "__main__":
                     except ValueError:
                         # chordlabel not in list, skip to next label 
                         continue
-
                     # filter out invalid chromadata (because the labels are hand annotated, errors may occur)
-                    # only keep datapoints where the correlation with the annotated label is highest
+                    # only keep datapoints where the correlation with the annotated label is high
+                    # only keep best fitting points or discard highly unlikely chords
                     corr = computeCorrelation(chromadata,templates)
-                    max_corr_index = np.argmax(corr, axis=0)
-                    mask = [True if index == labels.index(chordlabel) else False for index in max_corr_index]
+                    # highest correlation
+                    if args.filter_type == "max":
+                        max_corr_index = np.argmax(corr, axis=0)
+                        mask = [True if index == labels.index(chordlabel) else False for index in max_corr_index]
+                    # threshold
+                    elif args.filter_type == "thresh":
+                        mask = corr[labels.index(chordlabel), :] > 0.6
 
                     # append the current chromadata to the data entries in the dictionary 
                     data = chords.get(chordlabel)
