@@ -73,7 +73,6 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
             dset.attrs.create(str(key), value)
 
 def transcribeCPSS(filepath,split,data,metadata,classifier):
-    y = utils.loadAudiofile(filepath)
     chroma = features.deepChroma(filepath,split)
     t_chroma = utils.timeVector(chroma.shape[1],hop_length=2205)
     hcdf = pitchspace.computeHCDF(chroma,prefilter_length=3,use_cpss=False)
@@ -111,10 +110,10 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
     data["chroma"] = (chroma,{"hop_length":2205,"fs":22050}) # DCP
     data["hcdf"] = (hcdf,{"info":"harmonic change detection function"})
     data["gate"] = (gate,{"info":"gating function"})
-    corr_templates, labels = features.computeCorrelation(chroma,inner_product=False,template_type="sevenths")
+    corr_pitchspace, labels = features.computeCorrelation(chroma,inner_product=False,template_type="sevenths")
+
     # save the estimation of stable regions only (for visualization)
-    corr_stable_region = np.zeros_like(corr_templates)
-    corr_pitchspace = np.copy(corr_templates)
+    corr_stable_region = np.zeros_like(corr_pitchspace)
     corr_stable_region[-1,:] = 1.0
     corr_templates_stable_region = np.copy(corr_stable_region)
     # classify stable regions witch tonal pitch space
@@ -138,7 +137,10 @@ def transcribeCPSS(filepath,split,data,metadata,classifier):
             # adjust correlation matrix with findings
             corr_pitchspace[:, i0:i1] = 0.0
             corr_pitchspace[index, i0:i1] = 1.0
-            corr_templates_stable_region[:, i0:i1]  = corr_templates[:, i0:i1]
+            # compute correlation with templates for comparison experiment!
+            chroma_avg = np.average(chroma[:, i0:i1],axis=1).reshape((12,1))
+            temp, labels = features.computeCorrelation(chroma_avg,inner_product=False,template_type="sevenths")
+            corr_templates_stable_region[:, i0:i1]  = temp
             corr_stable_region[index, i0:i1] = 1.0
 
     # decode estimation of stable regions
