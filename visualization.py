@@ -6,7 +6,7 @@ import utils
 import numpy as np
 from collections import namedtuple
 import matplotlib.pyplot as plt
-import mir_eval
+from dataloader import DATASETS
 import librosa.display
 from scipy.stats import pearsonr
 
@@ -18,30 +18,23 @@ def load_results(filepath):
     """reads all scores in a .hdf5 file and returns a list of trackdata and a list of the used datasets"""
     results = []
     with  h5py.File(filepath,"r") as file:
-        datasets = file.attrs.get("dataset")
 
-        if datasets is None:
-            raise KeyError("Corrupt result file! no datasets are specified in the header!")
-        
-        if not isinstance(datasets,list): # convert to list if necessary
-            datasets = list(datasets)
-
-        for grp_name in datasets:
+        for grp_name in DATASETS:
             for subgrp_name in file[f"{grp_name}/"]:
                 subgrp = file[f"{grp_name}/{subgrp_name}"]
                 results.append(trackdata( 
                         track_id=subgrp_name,
                         name=subgrp.attrs.get("name"),
                         dataset=grp_name,
-                        majmin_wscr=subgrp.attrs.get("majmin_score"),
-                        majmin_seg=subgrp.attrs.get("majmin_segmentation"),
-                        majmin_f=subgrp.attrs.get("majmin_f"),
-                        sevenths_wscr=subgrp.attrs.get("sevenths_score"),
-                        sevenths_seg=subgrp.attrs.get("sevenths_segmentation"),
-                        sevenths_f=subgrp.attrs.get("sevenths_f")
+                        majmin_wscr=subgrp.attrs.get("est_cpss_majmin_score"),
+                        majmin_seg=subgrp.attrs.get("est_cpss_majmin_segmentation"),
+                        majmin_f=subgrp.attrs.get("est_cpss_majmin_f"),
+                        sevenths_wscr=subgrp.attrs.get("est_cpss_sevenths_score"),
+                        sevenths_seg=subgrp.attrs.get("est_cpss_sevenths_segmentation"),
+                        sevenths_f=subgrp.attrs.get("est_cpss_sevenths_f")
                     )
                 )
-    return results,datasets
+    return results,DATASETS
 
 def load_trackdata(filepath,track_id,dataset):
     """reads out trackdata, chromagram and annotations for a given track from an .hdf5 file"""
@@ -52,12 +45,12 @@ def load_trackdata(filepath,track_id,dataset):
                         track_id=track_id,
                         name=subgrp.attrs.get("name"),
                         dataset=dataset,
-                        majmin_wscr=subgrp.attrs.get("majmin_score"),
-                        majmin_seg=subgrp.attrs.get("majmin_segmentation"),
-                        majmin_f=subgrp.attrs.get("majmin_f"),
-                        sevenths_wscr=subgrp.attrs.get("sevenths_score"),
-                        sevenths_seg=subgrp.attrs.get("sevenths_segmentation"),
-                        sevenths_f=subgrp.attrs.get("sevenths_f")
+                        majmin_wscr=subgrp.attrs.get("est_cpss_majmin_score"),
+                        majmin_seg=subgrp.attrs.get("est_cpss_majmin_segmentation"),
+                        majmin_f=subgrp.attrs.get("est_cpss_majmin_f"),
+                        sevenths_wscr=subgrp.attrs.get("est_cpss_sevenths_score"),
+                        sevenths_seg=subgrp.attrs.get("est_cpss_sevenths_segmentation"),
+                        sevenths_f=subgrp.attrs.get("est_cpss_sevenths_f")
                     )
         
         # load chroma to create time_vector from dataset
@@ -66,21 +59,16 @@ def load_trackdata(filepath,track_id,dataset):
         
         # strings have to be decoded with utf-8 
         ref_labels =      [x.decode("utf-8") for x in subgrp.get("ref_labels")]
-        if file.attrs.get("transcriber") == "cpss":
-            majmin_labels =   [x.decode("utf-8") for x in subgrp.get("labels_cpss")]
-            est_majmin = np.copy(subgrp.get("intervals_cpss")), majmin_labels
-            sevenths_labels = [x.decode("utf-8") for x in subgrp.get("refined_labels")]
-            est_sevenths = np.copy(subgrp.get("refined_intervals")), sevenths_labels
-        else:
-            majmin_labels =   [x.decode("utf-8") for x in subgrp.get("majmin_labels")]
-            est_majmin = np.copy(subgrp.get("majmin_intervals")),majmin_labels
-            sevenths_labels = [x.decode("utf-8") for x in subgrp.get("sevenths_labels")]
-            est_sevenths = np.copy(subgrp.get("sevenths_intervals")), sevenths_labels
-
+        est_stable_labels =   [x.decode("utf-8") for x in subgrp.get("stable_cpss_labels")]
+        est_stable = np.copy(subgrp.get("stable_cpss_intervals")), est_stable_labels
+        est_cpss= [x.decode("utf-8") for x in subgrp.get("est_cpss_labels")]
+        est_cpss = np.copy(subgrp.get("est_cpss_intervals")), est_cpss
+        est_templates = [x.decode("utf-8") for x in subgrp.get("est_templates_labels")]
+        est_templates = np.copy(subgrp.get("est_templates_intervals")), est_templates
         # convert to numpy arrays and pack to tuples
         chromadata = t_chroma, np.copy(subgrp.get("pitchgram_cqt",np.array([]))), np.copy(subgrp.get("chroma_prefiltered",chroma))
         ground_truth = np.copy(subgrp.get("ref_intervals")), ref_labels
-    return track_data,chromadata,ground_truth,est_majmin,est_sevenths
+    return track_data,chromadata,ground_truth,est_stable,est_cpss,est_templates
 
     
 class visualizationApp():
@@ -189,12 +177,9 @@ class visualizationApp():
     def plot_results(self,*args):
         plt.close("all")
         t_chroma,cqt,chroma_prefiltered = self.chromadata
-        ref_intervals,ref_labels = self.ground_truth
-        est_majmin_intervals,est_majmin_labels = self.est_majmin
-        est_sevenths_estimation_intervals,est_sevenths_estimation_labels = self.est_sevenths  
+
         # select chromadata / correlation or whatever
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
-
 
         if not self.plot_cqt.value:
             fig,((ax_1,ax_11),(ax_2,ax_21)) = plt.subplots(2,2,height_ratios=(3,5),width_ratios=(20,.3),figsize=(9,5))
@@ -202,13 +187,15 @@ class visualizationApp():
             fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,3,9),width_ratios=(20,.3),figsize=(7,9))
         # create chord annotation plot
 
-        utils.plotChordAnnotations(ax_1,ref_intervals,ref_labels,time_interval=time_interval,y_0=6)
-        ax_1.text(time_interval[0],7.7,"Ground truth annotations")
-        utils.plotChordAnnotations(ax_1,est_majmin_intervals,est_majmin_labels,time_interval=time_interval,y_0=3)
-        ax_1.text(time_interval[0],4.7,"Estimated with majmin alphabet")
-        utils.plotChordAnnotations(ax_1,est_sevenths_estimation_intervals,est_sevenths_estimation_labels,time_interval=time_interval,y_0=0)
-        ax_1.text(time_interval[0],1.7,"Estimated with sevenths alphabet")
-        ax_1.set_ylim(0,8)
+        utils.plotChordAnnotations(ax_1,self.ground_truth[0],self.ground_truth[1],time_interval=time_interval,y_0=9)
+        ax_1.text(time_interval[0],10.7,"Ground truth annotations")
+        utils.plotChordAnnotations(ax_1,self.est_stable[0],self.est_stable[1],time_interval=time_interval,y_0=6)
+        ax_1.text(time_interval[0],7.7,"stable regions")
+        utils.plotChordAnnotations(ax_1,self.est_cpss[0],self.est_cpss[1],time_interval=time_interval,y_0=3)
+        ax_1.text(time_interval[0],4.7,"Estimation CPSS")
+        utils.plotChordAnnotations(ax_1,self.est_templates[0],self.est_templates[1],time_interval=time_interval,y_0=0)
+        ax_1.text(time_interval[0],1.7,"Estimation Templates")
+        ax_1.set_ylim(0,10)
         ax_1.set_yticks([])
         # Hide the y-axis line
         ax_1.spines['left'].set_visible(False)
@@ -263,7 +250,7 @@ class visualizationApp():
             self.dropdown_dataset.options = self.datasets
             self.dropdown_dataset.value = self.dropdown_dataset.options[0]
             self.update_dataset() # updates all dropdown widgets
-            self.preview_result_file()
+            # self.preview_result_file()
 
         except KeyError:
             print("Corrupt File: No Metadata indicating used datasets available..")
@@ -316,7 +303,7 @@ class visualizationApp():
         self.output_handle.update(display.Markdown(table_md))
 
     def load_track(self):
-        self.trackdata,self.chromadata,self.ground_truth,self.est_majmin,self.est_sevenths = load_trackdata(os.path.join(self.path,self.dropdown_resultfile.value),
+        self.trackdata,self.chromadata,self.ground_truth,self.est_stable,self.est_cpss,self.est_templates= load_trackdata(os.path.join(self.path,self.dropdown_resultfile.value),
                                                                             self.dropdown_id.value,self.dropdown_dataset.value)
         # update t_max of slider 
         self.t_start_slider.max = self.chromadata[0][-1]-self.delta_t.value # access track length via t_chroma from chromadata
