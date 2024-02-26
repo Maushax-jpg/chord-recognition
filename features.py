@@ -166,8 +166,7 @@ def computeWeightMatrix(chroma,M=15,neighbors=50):
     weight_matrix = ssm*recurrence_plot
     return weight_matrix,ssm,ssm_smoothed
 
-def computeCorrelation(chroma,inner_product=True,template_type="majmin"):
-    templates,labels = utils.createChordTemplates(template_type=template_type) 
+def computeCorrelation(chroma,templates,inner_product=False):
     if inner_product:
         correlation = np.matmul(templates.T,chroma)
         np.clip(correlation,out=correlation,a_min=0,a_max=1)
@@ -181,7 +180,7 @@ def computeCorrelation(chroma,inner_product=True,template_type="majmin"):
         # replace NaN with zeros
         correlation = np.nan_to_num(correlation)
         np.clip(correlation,out=correlation,a_min=0,a_max=1)
-    return correlation,labels
+    return correlation
 
 def applyPrefilter(t_chroma, chroma, filter_type,**params):
     """
