@@ -7,7 +7,6 @@ from matplotlib.patches import Rectangle
 from collections import namedtuple
 import pitchspace
 from matplotlib.patches import Ellipse
-import os.path
 import matplotlib.transforms as transforms
 
 
@@ -167,7 +166,7 @@ def plotCQT(ax,t_chroma,cqt,time_interval=None):
     img = librosa.display.specshow(cqt[:,i0:i1],
                                 x_coords=t_chroma[i0:i1],
                                 x_axis="time",
-                                y_axis='cqt_hz',
+                                y_axis='cqt_note',
                                 cmap="viridis",
                                 ax=ax,vmin=0,
                                 vmax=np.max(cqt[:,i0:i1]))

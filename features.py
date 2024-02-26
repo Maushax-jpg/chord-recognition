@@ -116,11 +116,7 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compress
 
     if clip:
         crp = np.clip(crp,0,None) # clip negative values
-
-    if norm == "l1":
-        crp = crp / np.sum(np.abs(crp) + EPS, axis=0)
-    elif norm == "l2":
-        crp = crp / np.linalg.norm(crp)
+    crp = crp / np.linalg.norm(crp,1)
     return crp, pitchgram_energy, pitchgram_cqt
 
 def deepChroma(filepath,split_nr=1):
@@ -169,8 +165,7 @@ def computeWeightMatrix(chroma,M=15,neighbors=50):
     weight_matrix = ssm*recurrence_plot
     return weight_matrix,ssm,ssm_smoothed
 
-def computeCorrelation(chroma,inner_product=True,template_type="majmin"):
-    templates,labels = utils.createChordTemplates(template_type=template_type) 
+def computeCorrelation(chroma,templates,inner_product=True,):
     if inner_product:
         correlation = np.matmul(templates.T,chroma)
         np.clip(correlation,out=correlation,a_min=0,a_max=1)
@@ -184,7 +179,7 @@ def computeCorrelation(chroma,inner_product=True,template_type="majmin"):
         # replace NaN with zeros
         correlation = np.nan_to_num(correlation)
         np.clip(correlation,out=correlation,a_min=0,a_max=1)
-    return correlation,labels
+    return correlation
 
 def applyPrefilter(t_chroma, chroma, filter_type,**params):
     """

@@ -122,28 +122,65 @@ class ChordModel:
         return logpdf
 
 class CPSS_Classifier():
-    def __init__(self,alphabet="majmin",filepath="/home/max/ET-TI/Masterarbeit/chord-recognition/models/cpss",split=1): 
+    def __init__(self,filepath,alphabet="majmin"): 
         self._labels = utils.createChordTemplates(alphabet)[1]
         self._key_templates = utils.createKeyTemplates()
-        self._model = self.loadChordmodel(filepath, alphabet, split)
+        self._model = self.loadChordmodel(filepath)
+        self._loglikelihood = np.array([])
 
-    def loadChordmodel(self,filepath,alphabet,split):
-        path = f"{filepath}/cpss_{alphabet}_dcp.npy"
-        return np.load(path,allow_pickle=True)[()]
+    def loadChordmodel(self,filepath):
+        return np.load(filepath,allow_pickle=True)[()]
 
-    def computeLikelihoods(self,chromavector,key_index):
-        likelyhood = np.zeros((len(self._labels),), dtype=float)
-        # compute feature vector for the selected key
+    def computeStableRegions(self,chroma):  
+        stable_regions = [] 
+        threshold = 0.3
+        min_distance = 2
+            
+        hcdf = computeHCDF(chroma,prefilter_length=3,use_cpss=False)
+        gate = np.zeros_like(hcdf)
+        gate[hcdf < threshold] = 1
+        start_index = 0
+
+        for i, value in enumerate(gate):
+            if value == 1:
+                if start_index is None:
+                    start_index = i
+            elif start_index is not None:
+                # check if the interval is long enough
+                if i - start_index > min_distance: 
+                    stable_regions.append((start_index, i-1))
+                start_index = None
+        # check if last index is still ongoing
+        if start_index is not None:
+            stable_regions.append((start_index, len(gate) - 1))
+        return stable_regions, hcdf
+    
+    def computeLikelihoods(self,chromavector,key_index=None):
+        self.likelyhood = np.full((len(self._labels),),-np.inf, dtype=float)
+
         F,FR,TR,_ = computeCPSSfeatures(chromavector)
-        x = (
-            F[0,:], F[1,:],
-            FR[2 * key_index, :], FR[2*key_index+1, :],
-            TR[2 * key_index, :], TR[2*key_index+1, :]
-        )
-        # compute likelyhood
-        for chordmodel in self._model[key_index]:
-            likelyhood[chordmodel._index] = chordmodel.computeLogLikelihood(x)
-        return likelyhood
+        if key_index is None:
+            # compute likelyhoods for all 12 keys
+            for key_index in range(12):
+                x = (
+                    F[0,:], F[1,:],
+                    FR[2 * key_index, :], FR[2*key_index+1, :],
+                    TR[2 * key_index, :], TR[2*key_index+1, :]
+                )
+                # as chords appear in different keys, only the largest likelyhoods are kept
+                for chordmodel in self._model[key_index]:
+                    lh = chordmodel.computeLogLikelihood(x)
+                    if lh > self.likelyhood[chordmodel._index]:
+                        self.likelyhood[chordmodel._index] = lh
+        else:
+            x = (
+                F[0,:], F[1,:],
+                FR[2 * key_index, :], FR[2*key_index+1, :],
+                TR[2 * key_index, :], TR[2*key_index+1, :]
+            )
+            for chordmodel in self._model[key_index]:
+                self.likelyhood[chordmodel._index] = chordmodel.computeLogLikelihood(x)
+        return self.likelyhood
     
     def selectKey(self, chromavector):
         inner_product = np.matmul(self._key_templates.T, chromavector)
@@ -152,8 +189,4 @@ class CPSS_Classifier():
     def classify(self, chromavector,key_index):
         likelyhood = self.computeLikelihoods(chromavector,key_index=key_index)
         index = np.argmax(likelyhood)
-        # negative likelyhood -> this occurs if there is no good fit for the chromavector
-        if likelyhood[index] > 0:
-            return index
-        else:
-            return None
+        return index, self._labels[index]
