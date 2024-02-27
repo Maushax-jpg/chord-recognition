@@ -437,9 +437,9 @@ def getFscoreResults(filepath,model="stable_cpss",alphabet="majmin"):
             results["combined"][1] += titles
     return results
 
-def plotResults(data,xlabels,colors,yticks=np.arange(-20,25,5),ylim=(-20,10)):
+def plotResults(data,xlabels,colors,yticks=np.arange(-20,25,5),ylim=(-20,10),figsize=(5.5, 2.5)):
     """creates colored violinplots for data"""
-    fig, ax1 = plt.subplots(figsize=(5.5, 2.5))
+    fig, ax1 = plt.subplots(figsize=figsize)
     parts = ax1.violinplot(data,showmeans=False, showmedians=True,
             showextrema=False)
     bplot = ax1.boxplot(data,
