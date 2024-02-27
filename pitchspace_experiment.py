@@ -18,7 +18,7 @@ def parse_arguments():
     """extract command line arguments in ordert to setup chord recognition pipeline"""
     parser = argparse.ArgumentParser(prog='Automatic chord recognition experiment', description='Transcribe audio signal')
     parser.add_argument('filename',help="specify filename to save the results")
-    parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="none",
+    parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="drums",
                          help='Select source separation type')
     parser.add_argument('--use_key_estimation', type=bool, default=True, help='use state transition matrix from data')
     parser.add_argument('--use_chord_statistics', type=bool, default=True, help='use state transition matrix from data')
@@ -81,6 +81,7 @@ def transcribeCPSS(filepath,data,metadata,classifier):
     data["chroma"] = (chroma,{"hop_length":2048,"fs":22050})
     data["hcdf"] = (hcdf,{"info":"harmonic change detection function"})
     data["pitchgram_cqt"] = (pitchgram_cqt,{"info":"unprocessed pitchgram derived from cqt"})
+    data["pitchgram"] = (pitchgram,{"info":"pitchgram after liftering"})
 
     # pattern matching with templates
     estimation_matrix_templates = features.computeCorrelation(chroma,templates,inner_product=False)
@@ -104,9 +105,9 @@ def transcribeCPSS(filepath,data,metadata,classifier):
             key_index = None
         # classify an average chromavector
         chroma_vector = np.average(chroma[:, i0:i1], axis=1).reshape((12,1))
-        
+        chroma_vector = chroma_vector / np.sum(chroma_vector) # l1-normalization is necessary
         # use pitchspace to estimate chord in stable region
-        index,label = classifier.classify(chroma_vector,key_index)
+        index,_ = classifier.classify(chroma_vector,key_index)
         cpss_estimation_matrix[index, i0:i1] = 1.0
         
         refined_estimation_matrix[:, i0:i1] = 0.0

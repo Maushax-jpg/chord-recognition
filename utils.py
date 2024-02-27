@@ -8,7 +8,8 @@ from collections import namedtuple
 import pitchspace
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
-
+import h5py
+import dataloader
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals accident')
 """ 
@@ -44,12 +45,24 @@ def loadAudiofile(filepath,fs=22050,**kwargs):
         raise FileNotFoundError(f"could not load file: {filepath}")
     return y
 
-def loadChordAnnotations(annotationpath):
+def loadChordAnnotations(annotationpath,time_interval=None):
     try:
         intervals, labels = mir_eval.io.load_labeled_intervals(annotationpath)
+        if time_interval is None:
+            return intervals, labels
+        new_labels = []
+        new_intervals = []
+        for i,label in enumerate(labels):
+            # skip labels that do not overlap time interval 
+            if intervals[i,1] < time_interval[0] or intervals[i,0] > time_interval[1]:
+                continue
+            new_labels.append(label)
+            # crop interval if needed 
+            new_intervals.append([max(intervals[i,0],time_interval[0]), min(intervals[i,1],time_interval[1])])
+        return np.asarray(new_intervals),new_labels
     except FileNotFoundError:
         raise FileNotFoundError(f"Incorrect path! could not load annotation: {annotationpath}")
-    return intervals, labels
+
 
 def timeVector(N,t_start=0,t_stop=None,hop_length=512,sr=22050):
     if t_stop is None:
@@ -96,9 +109,9 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
         comparisons = mir_eval.chord.sevenths(ref_labels, est_labels)
     else:
         raise ValueError(f"invalid evaluation scheme: {scheme}")
-    score = round(mir_eval.chord.weighted_accuracy(comparisons, durations),2)
-    mean_seg_score = round(mir_eval.chord.seg(ref_intervals, est_intervals),2)
-    return score,mean_seg_score
+    score = mir_eval.chord.weighted_accuracy(comparisons, durations)
+    mean_seg_score = mir_eval.chord.seg(ref_intervals, est_intervals)
+    return score,mean_seg_score,intervals,comparisons
 
 def createChordTemplates(template_type="majmin"):
     """create a set of chord templates for the given evaluation scheme:
@@ -401,3 +414,47 @@ def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
 
     ellipse.set_transform(transf + ax.transData)
     return ax.add_patch(ellipse)
+
+
+def getFscoreResults(filepath,model="stable_cpss",alphabet="majmin"):
+    results = {}
+    results["combined"] =[[],[]]
+    if model in ["stable_cpss", "stable_templates", "est_cpss","est_templates"]:
+        metric = f"{model}_{alphabet}_f"
+    else:
+        metric = f"{alphabet}_f"
+    with h5py.File(filepath,"r") as file:
+        for dset in ["beatles","rwc_pop","rw","queen"]:
+            f_scores = []
+            titles = []
+            for subgrp_name in file[f"{dset}/"]:
+                subgrp = file[f"{dset}/{subgrp_name}"]
+                if subgrp.attrs.get("name") not in dataloader.OUTLIERS:
+                    titles.append(subgrp.attrs.get("name"))
+                    f_scores.append(subgrp.attrs.get(metric))
+            results[dset] = (f_scores, titles)
+            results["combined"][0] += f_scores
+            results["combined"][1] += titles
+    return results
+
+def plotResults(data,xlabels,colors,yticks=np.arange(-20,25,5),ylim=(-20,10)):
+    """creates colored violinplots for data"""
+    fig, ax1 = plt.subplots(figsize=(5.5, 2.5))
+    parts = ax1.violinplot(data,showmeans=False, showmedians=True,
+            showextrema=False)
+    bplot = ax1.boxplot(data,
+                    showfliers=True,medianprops=dict(linestyle=None,linewidth=0),
+                    flierprops=dict(markerfacecolor='k', marker='o',markersize=1),
+                    widths=0.1)
+    parts["cmedians"].set_color("red")
+    for x,color in zip(parts["bodies"],colors):
+            x.set_color(color)
+
+    ax1.set_yticks(yticks)
+    ax1.set_ylim(ylim)
+    ax1.set_ylabel("Delta F-score in %")
+    ax1.set_xticks(np.arange(1, len(xlabels) + 1), labels=xlabels)
+    ax1.set_xlim(0.5, len(xlabels) + 0.5);
+    ax1.grid("on")
+    fig.tight_layout(pad=0.1)
+    return fig,ax1
