@@ -16,6 +16,8 @@ OUTLIERS = ['03_-_Anna_(Go_To_Him)', # tuning issues
             'Stand Your Ground'  # faulty audio / issues with annotations
 ]
 
+DATASETS = ["beatles","rwc_pop","rw","queen"]
+
 class Dataset(ABC):
     """Abstract class for a dataset"""
     @abstractmethod

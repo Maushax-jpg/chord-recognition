@@ -1,7 +1,7 @@
 import os
 import argparse
-import dataloader
 import utils
+import dataloader
 import features
 import numpy as np
 import h5py
@@ -47,6 +47,14 @@ def saveResults(file,name,track_metadata,datasets,parent_group=None):
         for key,value in metadata.items():
             dset.attrs.create(str(key), value)
 
+def postfilter(distance_matrix,labels):
+    ## postfiltering using HMM ##
+    A = features.uniform_transition_matrix(0.2,len(labels)) # state transition probability matrix
+    B = distance_matrix / (np.sum(distance_matrix,axis=0) + features.EPS) # likelyhood matrix
+    C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
+    distance_matrix_smoothed, _, _, _ = features.viterbi_log_likelihood(A, C, B)
+    return distance_matrix_smoothed
+
 def transcribeTemplate(filepath,data,metadata,params):
     y = utils.loadAudiofile(filepath)
 
@@ -64,35 +72,44 @@ def transcribeTemplate(filepath,data,metadata,params):
     # apply RMS thresholding
     rms_db = features.computeRMS(y)
     mask = rms_db < -50
-    chroma[:,mask] = utils.NO_CHORD.reshape((12,1))
-
+    chroma[:,mask] = utils.NO_CHORD
 
     # apply prefilter
     chroma_smoothed = features.applyPrefilter(t_chroma,chroma,"median",N=11)
     data["chroma"] = (chroma_smoothed,chroma_params)
 
+    templates,labels = utils.createChordTemplates(template_type="sevenths") 
     for alphabet in ["majmin","sevenths"]:
-        ## pattern matching ##         
-        correlation,labels = features.computeCorrelation(chroma_smoothed,inner_product=True,template_type=alphabet)
-        correlation,labels = features.computeCorrelation(chroma_smoothed,inner_product=False,template_type=alphabet)
+        ## pattern matching       
+        correlation = features.computeCorrelation(chroma_smoothed,templates,inner_product=True)
+        inner_product = features.computeCorrelation(chroma_smoothed,templates,inner_product=False)
+        # HMM 
+        correlation_smoothed = postfilter(correlation,labels)        
+        inner_product_smoothed = postfilter(inner_product,labels)
 
-        ## postfiltering using HMM ##
-        A = features.uniform_transition_matrix(0.1,len(labels)) # state transition probability matrix
-        B = correlation / (np.sum(correlation,axis=0) + features.EPS) # likelyhood matrix
-        C = np.ones((len(labels,))) * 1/len(labels)   # initial state probability matrix
-        correlation_smoothed, _, _, _ = features.viterbi_log_likelihood(A, C, B)
-
-        ## decode correlation matrix ##
+        # decode correlation matrix 
         chord_sequence = [labels[i] for i in np.argmax(correlation_smoothed,axis=0)]  
-        intervals,labels = utils.createChordIntervals(t_chroma,chord_sequence)   
-        data[f"{alphabet}_intervals"] = (intervals,{"info":"estimated chord intervals"})
-        data[f"{alphabet}_labels"] = (labels,{"info":"estimated chord labels"})
+        est_intervals, est_labels = utils.createChordIntervals(t_chroma,chord_sequence)   
+        data[f"{alphabet}_intervals_correlation"] = (est_intervals,{"info":"estimated chord intervals"})
+        data[f"{alphabet}_labels_correlation"] = (est_labels,{"info":"estimated chord labels"})
+        # Evaluation 
+        score,seg_score = utils.evaluateTranscription(est_intervals,est_labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
+        metadata[f"{alphabet}_wscr_correlation"] = score
+        metadata[f"{alphabet}_q_correlation"] = seg_score
+        metadata[f"{alphabet}_f_correlation"] = round((2*score*seg_score)/(score+seg_score),2)
 
-        ## Evaluation ##
-        score,seg_score = utils.evaluateTranscription(intervals,labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
-        metadata[f"{alphabet}_score"] = score
-        metadata[f"{alphabet}_segmentation"] = seg_score
-        metadata[f"{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
+        ## decode matrix of inner products 
+        chord_sequence = [labels[i] for i in np.argmax(inner_product_smoothed,axis=0)]  
+        est_intervals,est_labels = utils.createChordIntervals(t_chroma,chord_sequence)   
+        data[f"{alphabet}_intervals_inner_product"] = (est_intervals,{"info":"estimated chord intervals"})
+        data[f"{alphabet}_labels_inner_product"] = (est_labels,{"info":"estimated chord labels"})
+
+        # Evaluation 
+        score,seg_score = utils.evaluateTranscription(est_intervals,est_labels,data["ref_intervals"][0],data["ref_labels"][0],alphabet)
+        metadata[f"{alphabet}_wcsr_inner_product"] = score
+        metadata[f"{alphabet}_q_inner_product"] = seg_score
+        metadata[f"{alphabet}_f_inner_product"] = round((2*score*seg_score)/(score+seg_score),2)
+        print(alphabet,"inner: ",metadata[f"{alphabet}_f_inner_product"], "corr: ",metadata[f"{alphabet}_f_correlation"] )
     return 
 
 if __name__ == "__main__":

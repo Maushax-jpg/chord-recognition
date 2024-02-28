@@ -37,6 +37,8 @@ pitch_classes = [
 
 enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#","G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
 
+NO_CHORD = np.random.random((12,1)) * np.finfo(float).eps
+
 def loadAudiofile(filepath,fs=22050,**kwargs):
     """load audio signal"""
     try:
@@ -134,9 +136,7 @@ def createChordTemplates(template_type="majmin"):
             templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
-    for i in range(0,12,2):
-        templates[i,chord_index] = 1/6
-
+    templates[:,chord_index] = NO_CHORD.reshape((12,))
     chord_labels.append("N")
     return templates,chord_labels
 

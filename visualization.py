@@ -18,7 +18,7 @@ def load_results(filepath):
     """reads all scores in a .hdf5 file and returns a list of trackdata and a list of the used datasets"""
     results = []
     with  h5py.File(filepath,"r") as file:
-        datasets = file.attrs.get("dataset")
+        datasets = file.attrs.get("dataset",["beatles","rwc_pop","rw","queen"])
 
         if datasets is None:
             raise KeyError("Corrupt result file! no datasets are specified in the header!")
