@@ -7,9 +7,10 @@ from matplotlib.patches import Rectangle
 from collections import namedtuple
 import pitchspace
 from matplotlib.patches import Ellipse
-import os.path
+import h5py
 import matplotlib.transforms as transforms
-
+from scipy.stats import wilcoxon
+from dataloader import OUTLIERS
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals accident')
 """ 
@@ -341,9 +342,6 @@ def create_violinplot(ax,data,xlabels,bodycolor='cyan'):
                 showfliers=True,medianprops=dict(linestyle=None,linewidth=0),
                 flierprops=dict(markerfacecolor='k', marker='o',markersize=1),
                 widths=0.1)
-    ax.set_yticks(np.arange(0,110,10))
-    ax.set_ylim(0,100)
-    ax.set_ylabel("F-score in %")
     ax.set_xticks(np.arange(1, len(xlabels) + 1), labels=xlabels)
     ax.set_xlim(0.5, len(xlabels) + 0.5);
     ax.grid("on")
@@ -402,3 +400,35 @@ def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
 
     ellipse.set_transform(transf + ax.transData)
     return ax.add_patch(ellipse)
+
+def computeStatistics(data):
+    median = np.median(data)
+    iqr = np.subtract(*np.percentile(data, [75, 25]))
+    return median,iqr
+
+def getFscoreResults(filepath,alphabet="majmin",printMetadata=False):
+    results = {"combined":[]}
+    with h5py.File(filepath,"r") as file:
+        text = "----Transcription Metadata----\n"
+        for key,value in file.attrs.items():
+            text += f"{key}={value}\n"
+        if printMetadata:
+            print(text)
+        for dset in ["beatles","rwc_pop","rw","queen"]:
+            f_scores = []
+            for subgrp_name in file[f"{dset}/"]:
+                subgrp = file[f"{dset}/{subgrp_name}"]
+                if subgrp.attrs.get("name") not in OUTLIERS:
+                    f_scores.append(subgrp.attrs.get(f"{alphabet}_f"))
+            results[dset] = f_scores
+            results["combined"] += f_scores
+    return results
+
+
+def wilcoxonTest(delta):
+    res = wilcoxon(delta,method='approx')
+    N = len(delta)
+    p = res.pvalue
+    z = res.zstatistic
+    r = np.abs(z) / np.sqrt(N)
+    return N,p,z,r
