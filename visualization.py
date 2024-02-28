@@ -72,10 +72,10 @@ def load_trackdata(filepath,track_id,dataset):
             sevenths_labels = [x.decode("utf-8") for x in subgrp.get("refined_labels")]
             est_sevenths = np.copy(subgrp.get("refined_intervals")), sevenths_labels
         else:
-            majmin_labels =   [x.decode("utf-8") for x in subgrp.get("majmin_labels")]
-            est_majmin = np.copy(subgrp.get("majmin_intervals")),majmin_labels
-            sevenths_labels = [x.decode("utf-8") for x in subgrp.get("sevenths_labels")]
-            est_sevenths = np.copy(subgrp.get("sevenths_intervals")), sevenths_labels
+            majmin_labels =   [x.decode("utf-8") for x in subgrp.get("majmin_labels_inner_product")]
+            est_majmin = np.copy(subgrp.get("majmin_intervals_inner_product")),majmin_labels
+            sevenths_labels = [x.decode("utf-8") for x in subgrp.get("sevenths_labels_correlation")]
+            est_sevenths = np.copy(subgrp.get("sevenths_intervals_correlation")), sevenths_labels
 
         # convert to numpy arrays and pack to tuples
         chromadata = t_chroma, np.copy(subgrp.get("pitchgram_cqt",np.array([]))), np.copy(subgrp.get("chroma_prefiltered",chroma))
@@ -263,7 +263,7 @@ class visualizationApp():
             self.dropdown_dataset.options = self.datasets
             self.dropdown_dataset.value = self.dropdown_dataset.options[0]
             self.update_dataset() # updates all dropdown widgets
-            self.preview_result_file()
+            # self.preview_result_file()
 
         except KeyError:
             print("Corrupt File: No Metadata indicating used datasets available..")
@@ -327,7 +327,7 @@ class visualizationApp():
             self.plot_cqt.disabled = False
         else:
             self.plot_cqt.disabled = True    
-        self.display_trackdata()
+        # self.display_trackdata()
 
     def update_dataset(self,*args):
         """callback function for dropdown_dataset"""

@@ -79,10 +79,16 @@ def transcribeTemplate(filepath,data,metadata,params):
     data["chroma"] = (chroma_smoothed,chroma_params)
 
     templates,labels = utils.createChordTemplates(template_type="sevenths") 
+
     for alphabet in ["majmin","sevenths"]:
-        ## pattern matching       
-        correlation = features.computeCorrelation(chroma_smoothed,templates,inner_product=True)
-        inner_product = features.computeCorrelation(chroma_smoothed,templates,inner_product=False)
+        # pattern matching with sample correlation 
+        correlation = features.computeCorrelation(chroma_smoothed,templates,inner_product=False)
+
+        # pattern matching with inner product
+        inner_product = features.computeCorrelation(chroma_smoothed,templates,inner_product=True)
+        inner_product[:,mask] = 0.0 # reset correlation to enforce No chord in silence regions
+        inner_product[-1,mask] = 1.0
+
         # HMM 
         correlation_smoothed = postfilter(correlation,labels)        
         inner_product_smoothed = postfilter(inner_product,labels)
@@ -114,6 +120,9 @@ def transcribeTemplate(filepath,data,metadata,params):
 
 if __name__ == "__main__":
     params = parse_arguments()
+    # specify used parameters
+    params["N"] = 11
+    params["p"] = 0.2
     file = h5py.File(params.pop("filename"), 'w')
     # save command line arguments as metadata
     for key,value in params.items():
