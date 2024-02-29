@@ -458,3 +458,29 @@ def plotResults(data,xlabels,colors,yticks=np.arange(-20,25,5),ylim=(-20,10),fig
     ax1.grid("on")
     fig.tight_layout(pad=0.1)
     return fig,ax1
+
+def saveResults(file,name,track_metadata,datasets,parent_group=None):
+    """saves the results for a given track_id in hdf5 format
+    file: hdf5 file handle 
+    track_id: the track ID of the song 
+    track_metadata: additional attributes for the track
+    datasets:   a dictionary containing the datasets that need to be stored
+                e.g. track_data = {"dataset_1": (data,metadata)}
+    """
+    # create a subgroup for the track_id
+    if parent_group is not None:
+        subgroup = file.create_group(f"{parent_group}/{name}")
+    else:
+        subgroup = file.create_group(f"{name}")
+    for key,value in track_metadata.items():
+        subgroup.attrs.create(str(key), value)
+    
+    # store the datasets 
+    for dataset_name,(data,metadata) in datasets.items():
+        try:
+            dset = subgroup.create_dataset(dataset_name,data=data)
+        except ValueError as error: 
+            print(f"Error while creating dataset {dataset_name}:{error}\moving on..")
+            continue
+        for key,value in metadata.items():
+            dset.attrs.create(str(key), value)

@@ -20,44 +20,22 @@ def parse_arguments():
     parser.add_argument('filename',help="specify filename to save the results")
     parser.add_argument('--source_separation', choices=["none",'drums','vocals','both'], default="drums",
                          help='Select source separation type')
-    parser.add_argument('--use_key_estimation', type=bool, default=True, help='use state transition matrix from data')
+    parser.add_argument('--N', type=int, default=11,
+                         help='Select source separation type')
+    parser.add_argument('--p', type=float, default=0.2,
+                         help='Select source separation type')
+    parser.add_argument('--use_key_estimation', type=bool, default=True, help='use center of effect for circle selection')
     parser.add_argument('--use_chord_statistics', type=bool, default=True, help='use state transition matrix from data')
     args = parser.parse_args()
 
     # Convert Namespace to dictionary
     return vars(args)
 
-def saveResults(file,name,track_metadata,datasets,parent_group=None):
-    """saves the results for a given track_id in hdf5 format
-    file: hdf5 file handle 
-    track_id: the track ID of the song 
-    track_metadata: additional attributes for the track
-    datasets:   a dictionary containing the datasets that need to be stored
-                e.g. track_data = {"dataset_1": (data,metadata)}
-    """
-    # create a subgroup for the track_id
-    if parent_group is not None:
-        subgroup = file.create_group(f"{parent_group}/{name}")
-    else:
-        subgroup = file.create_group(f"{name}")
-    for key,value in track_metadata.items():
-        subgroup.attrs.create(str(key), value)
-    
-    # store the datasets 
-    for dataset_name,(data,metadata) in datasets.items():
-        try:
-            dset = subgroup.create_dataset(dataset_name,data=data)
-        except ValueError as error: 
-            print(f"Error while creating dataset {dataset_name}:{error}\moving on..")
-            continue
-        for key,value in metadata.items():
-            dset.attrs.create(str(key), value)
-
 def postfilter(estimation_matrix):
     # postfiltering using HMM 
     if params.get("use_chord_statistics"):
         # load pretrained state transition probability matrix or use uniform state transition
-        model_path = "/home/max/ET-TI/Masterarbeit/chord-recognition/models/state_transitions/sevenths_30.npy"
+        model_path = "/home/max/ET-TI/Masterarbeit/chord-recognition/models/state_transitions/sevenths_20.npy"
         A = np.load(model_path,allow_pickle=True)
     else:
         A = features.uniform_transition_matrix(0.2,len(labels)) 
@@ -167,10 +145,10 @@ def transcribeCPSS(filepath,data,metadata,classifier):
 if __name__ == "__main__":
     params = parse_arguments()
     file = h5py.File(params.pop("filename"), 'w')
+    file.attrs.create("experiment","pitchspace_crp")
     # save command line arguments as metadata
     for key,value in params.items():
         file.attrs.create(str(key), value)  
-
     classifier = pitchspace.CPSS_Classifier(cpss_model_path, "sevenths") 
     templates,labels = utils.createChordTemplates(template_type="sevenths") 
 
@@ -191,6 +169,6 @@ if __name__ == "__main__":
 
             transcribeCPSS(filepath,data,metadata,classifier)
             # save results
-            saveResults(file,track_id,metadata,data,datasetname)
+            utils.saveResults(file,track_id,metadata,data,datasetname)
     file.close()
     print(f"DONE")

@@ -68,7 +68,7 @@ def flatness(chroma):
     arithmetic_mean = np.sum(chroma,axis=0) / 12 + np.finfo(float).eps
     return geometric_mean/arithmetic_mean
 
-def computeRMS(y, fs=22050, hop_length=2048):
+def computeRMS(y, hop_length=2048):
     S,_ = librosa.magphase(librosa.stft(y, n_fft=4096, hop_length=hop_length))
     rms = librosa.feature.rms(S=S, frame_length=4096, hop_length=hop_length)[0]
     rms = 20 * np.log10(rms + EPS)
@@ -79,7 +79,7 @@ def crpChroma(y, fs=22050, hop_length=2048, nCRP=33,eta=100,window=True,compress
     """compute Chroma DCT-Reduced Log Pitch feature from an audio signal"""
     bins_per_octave = 36
     octaves = 7
-    midi_start = 24
+    midi_start = 36
 
     estimated_tuning = librosa.estimate_tuning(y=y,sr=fs,bins_per_octave=bins_per_octave)
     C = np.abs(librosa.vqt(y,fmin=librosa.midi_to_hz(midi_start),filter_scale=1,
@@ -288,7 +288,7 @@ def applyPostfilter(correlation,labels,filter_type,**params):
         if params.get("model_path",None):
             A = np.load(params.get("model_path"),allow_pickle=True)
         else:
-            p = params.get("transition_prob",0.1)
+            p = params.get("transition_prob",0.2)
             A = uniform_transition_matrix(p,len(labels)) 
             
         B_O = correlation / (np.sum(correlation,axis=0) + EPS) # likelyhood matrix -> quasi normalized inner product
