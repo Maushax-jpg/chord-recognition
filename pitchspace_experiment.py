@@ -52,25 +52,31 @@ def transcribeCPSS(filepath,data,metadata,classifier):
     
     stable_regions, hcdf = classifier.computeStableRegions(chroma)
 
+    # apply RMS thresholding 
+    rms_db = features.computeRMS(y)
+    mask = rms_db < -50
+    chroma[:,mask] = utils.NO_CHORD
+
     # apply prefilter
     chroma = features.applyPrefilter(t_chroma,chroma,"median",N=params.get("N",11))
 
+    # save data
     data["chroma"] = (chroma,{"hop_length":2048,"fs":22050})
     data["hcdf"] = (hcdf,{"info":"harmonic change detection function"})
     data["pitchgram_cqt"] = (pitchgram_cqt,{"info":"unprocessed pitchgram derived from cqt"})
     data["pitchgram"] = (pitchgram,{"info":"pitchgram after liftering"})
 
     # pattern matching with templates
-    estimation_matrix_templates = features.computeCorrelation(chroma,templates,inner_product=False)
+    estimation_matrix_templates = features.computeCorrelation(chroma,templates)
 
-    # initialize matrices for estimation of stable regions
-    templates_estimation_matrix = np.zeros_like(estimation_matrix_templates)
-    templates_estimation_matrix[-1,:] = 1.0
-    cpss_estimation_matrix = np.zeros_like(estimation_matrix_templates)
-    cpss_estimation_matrix[-1,:] = 1.0
+    # initialize estimation matrices for estimation of stable regions with index of the No chord label
+    estimation_matrix_stableregions_templates = np.zeros_like(estimation_matrix_templates)
+    estimation_matrix_stableregions_cpss = np.zeros_like(estimation_matrix_templates)
+    estimation_matrix_stableregions_templates[-1,:] = 1.0
+    estimation_matrix_stableregions_cpss[-1,:] = 1.0
 
     # initialize matrix for "refined" template estimation with pitchspace
-    refined_estimation_matrix = np.copy(estimation_matrix_templates)
+    estimation_matrix_cpss = np.copy(estimation_matrix_templates)
 
     # classify stable regions
     for (i0, i1) in stable_regions:
@@ -83,51 +89,58 @@ def transcribeCPSS(filepath,data,metadata,classifier):
         # classify an average chromavector
         chroma_vector = np.average(chroma[:, i0:i1], axis=1).reshape((12,1))
         chroma_vector = chroma_vector / np.sum(chroma_vector) # l1-normalization is necessary
+        
         # use pitchspace to estimate chord in stable region
         index,_ = classifier.classify(chroma_vector,key_index)
-        cpss_estimation_matrix[index, i0:i1] = 1.0
-        
-        refined_estimation_matrix[:, i0:i1] = 0.0
-        refined_estimation_matrix[index, i0:i1] = 1.0
+        estimation_matrix_stableregions_cpss[index, i0:i1] = 1.0
+        # set likelihood values for all chords to zero
+        estimation_matrix_cpss[:, i0:i1] = 0.0
+        # set likelihood of estimated index to 1 to enforce the chord
+        estimation_matrix_cpss[index, i0:i1] = 1.0
+
+        # as a comparison, estimate the chord with templates
+        estimation_matrix_stableregions_templates[:, i0:i1] = features.computeCorrelation(chroma_vector,templates)
 
     # postfiltering using HMM 
-    smoothed_estimation_matrix_templates = postfilter(estimation_matrix_templates)
-    smoothed_refined_estimation_matrix = postfilter(refined_estimation_matrix)
+    estimation_matrix_templates_smoothed = postfilter(estimation_matrix_templates)
+    estimation_matrix_cpss_smoothed = postfilter(estimation_matrix_cpss)
 
     # create intervals and labels for all estimation matrices
     # stable regions transcribed with pitchspace
-    chord_sequence = [classifier._labels[i] for i in np.argmax(cpss_estimation_matrix,axis=0)] 
-    stable_cpss_intervals,stable_cpss_labels = utils.createChordIntervals(t_chroma,chord_sequence)
-
+    chord_sequence = [classifier._labels[i] for i in np.argmax(estimation_matrix_stableregions_cpss,axis=0)] 
+    intervals_stableregions_cpss,labels_stableregions_cpss = utils.createChordIntervals(t_chroma,chord_sequence)
+    data[f"intervals_stableregions_cpss"] = (intervals_stableregions_cpss,{"info":"stable region - chord intervals estimated with pitch space"})
+    data[f"labels_stableregions_cpss"] = (labels_stableregions_cpss,{"info":"stable region - chord labels estimated with pitch space"})
+    
     # stable regions transcribed with templates
-    chord_sequence = [classifier._labels[i] for i in np.argmax(templates_estimation_matrix,axis=0)] 
-    stable_templates_intervals,stable_templates_labels = utils.createChordIntervals(t_chroma,chord_sequence)
+    chord_sequence = [classifier._labels[i] for i in np.argmax(estimation_matrix_stableregions_templates,axis=0)] 
+    intervals_stableregions_templates,labels_stableregions_templates = utils.createChordIntervals(t_chroma,chord_sequence)
+    data[f"intervals_stableregions_templates"] = (intervals_stableregions_templates,{"info":"stable region - chord intervals estimated with templates"})
+    data[f"labels_stableregions_templates"] = (labels_stableregions_templates,{"info":"stable region - chord labels estimated with templates"})
+   
+    # chord estimation of cpss system
+    chord_sequence = [classifier._labels[i] for i in np.argmax(estimation_matrix_cpss_smoothed,axis=0)] 
+    intervals_cpss,labels_cpss = utils.createChordIntervals(t_chroma,chord_sequence)
+    data[f"intervals_cpss"] = (intervals_cpss,{"info":"estimated chord intervals"})
+    data[f"labels_cpss"] = (labels_cpss,{"info":"estimated chord labels"})
 
-    # chord estimation of total cpss system
-    chord_sequence = [classifier._labels[i] for i in np.argmax(smoothed_refined_estimation_matrix,axis=0)] 
-    est_cpss_intervals,est_cpss_labels = utils.createChordIntervals(t_chroma,chord_sequence)
-
-    # chord estimation with template based approach
-    chord_sequence = [classifier._labels[i] for i in np.argmax(smoothed_estimation_matrix_templates,axis=0)] 
-    est_templates_intervals,est_templates_labels = utils.createChordIntervals(t_chroma,chord_sequence)
-
-
-    data[f"stable_cpss_intervals"] = (stable_cpss_intervals,{"info":"stable region - chord intervals estimated with pitch space"})
-    data[f"stable_cpss_labels"] = (stable_cpss_labels,{"info":"stable region - chord labels estimated with pitch space"})
-    data[f"stable_templates_intervals"] = (stable_templates_intervals,{"info":"stable region - chord intervals estimated with templates"})
-    data[f"stable_templates_labels"] = (stable_templates_labels,{"info":"stable region - chord labels estimated with templates"})
-    data[f"est_cpss_intervals"] = (est_cpss_intervals,{"info":"estimated chord intervals"})
-    data[f"est_cpss_labels"] = (est_cpss_labels,{"info":"estimated chord labels"})
-    data[f"est_templates_intervals"] = (est_templates_intervals,{"info":"estimated chord intervals"})
-    data[f"est_templates_labels"] = (est_templates_labels,{"info":"estimated chord labels"})
-    # evaluation
-    for model in ["stable_cpss","stable_templates","est_cpss","est_templates"]:
+    # chord estimation with templates
+    chord_sequence = [classifier._labels[i] for i in np.argmax(estimation_matrix_templates_smoothed,axis=0)] 
+    intervals_templates,labels_templates = utils.createChordIntervals(t_chroma,chord_sequence)
+    data[f"intervals_templates"] = (intervals_templates,{"info":"estimated chord intervals"})
+    data[f"labels_templates"] = (labels_templates,{"info":"estimated chord labels"})
+  
+      # evaluation
+    for model in ["stableregions_cpss","stableregions_templates","cpss","templates"]:
         for alphabet in ["majmin","sevenths"]:
-            score,seg_score = utils.evaluateTranscription(data[f"{model}_intervals"][0],data[f"{model}_labels"][0],data["ref_intervals"][0],data["ref_labels"][0],alphabet)
-            metadata[f"{model}_{alphabet}_score"] = score
-            metadata[f"{model}_{alphabet}_segmentation"] = seg_score
-            metadata[f"{model}_{alphabet}_f"] = round((2*score*seg_score)/(score+seg_score),2)
-            print(alphabet,model,metadata[f"{model}_{alphabet}_f"])
+            score,seg_score = utils.evaluateTranscription(data[f"intervals_{model}"][0],
+                                                          data[f"labels_{model}"][0],
+                                                          data["ref_intervals"][0],
+                                                          data["ref_labels"][0],alphabet)
+            metadata[f"{alphabet}_wcsr_{model}"] = score
+            metadata[f"{alphabet}_q_{model}"] = seg_score
+            metadata[f"{alphabet}_f_{model}"] = (2*score*seg_score) /(score+seg_score)
+            print(alphabet,model,metadata[f"{alphabet}_f_{model}"])
 
 if __name__ == "__main__":
     params = parse_arguments()

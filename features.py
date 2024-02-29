@@ -165,7 +165,7 @@ def computeWeightMatrix(chroma,M=15,neighbors=50):
     weight_matrix = ssm*recurrence_plot
     return weight_matrix,ssm,ssm_smoothed
 
-def computeCorrelation(chroma,templates,inner_product=True,):
+def computeCorrelation(chroma,templates,inner_product=False):
     if inner_product:
         correlation = np.matmul(templates.T,chroma)
         np.clip(correlation,out=correlation,a_min=0,a_max=1)

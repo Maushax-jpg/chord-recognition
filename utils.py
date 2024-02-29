@@ -114,7 +114,7 @@ def evaluateTranscription(est_intervals,est_labels,ref_intervals,ref_labels,sche
         raise ValueError(f"invalid evaluation scheme: {scheme}")
     score = mir_eval.chord.weighted_accuracy(comparisons, durations)
     mean_seg_score = mir_eval.chord.seg(ref_intervals, est_intervals)
-    return score,mean_seg_score,intervals,comparisons
+    return score,mean_seg_score
 
 def createChordTemplates(template_type="majmin"):
     """create a set of chord templates for the given evaluation scheme:
@@ -149,7 +149,7 @@ def createChordTemplates(template_type="majmin"):
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
     
-    templates[:,chord_index] = NO_CHORD
+    templates[:,chord_index] = NO_CHORD.reshape((12,))
     chord_labels.append("N")
     return templates,chord_labels
 
