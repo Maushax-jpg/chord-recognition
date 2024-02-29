@@ -6,13 +6,19 @@ import utils
 import numpy as np
 from collections import namedtuple
 import matplotlib.pyplot as plt
-import mir_eval
 import librosa.display
-from scipy.stats import pearsonr
 
 
 trackdata = namedtuple('track','track_id name dataset majmin_wscr majmin_seg majmin_f sevenths_wscr sevenths_seg sevenths_f')
 """named tuple to store track specific metadata"""
+
+experiments =  [("source separation",["source_separation_none.hdf5","source_separation_vocals.hdf5",
+                                     "source_separation_drums.hdf5","source_separation_both.hdf5"]),
+                ("prefilter",["prefilter_rp.hdf5","prefilter_median.hdf5"]),
+                ("distance metrics",["distance_measure.hdf5"]),
+                ("pitchspace",["crp_pitchspace.hdf5"]),
+                ("deepchroma",["dcp_pitchspace.hdf5","dcp_madmom.hdf5"])]
+
 
 def load_results(filepath):
     """reads all scores in a .hdf5 file and returns a list of trackdata and a list of the used datasets"""
@@ -85,8 +91,8 @@ def load_trackdata(filepath,track_id,dataset):
     
 class visualizationApp():
     """A simple ipython GUI to visualize data of a result file """
-    def __init__(self,filepath=""):
-        self.path = filepath
+    def __init__(self,filepath):
+        self.path = filepath # path to result files
         self.current_figure = None
         self.chromadata = None
         self.trackdata = []
