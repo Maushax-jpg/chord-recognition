@@ -8,7 +8,7 @@ import h5py
 from tqdm import tqdm
 import pitchspace
 
-# create paths
+# create paths and specify used models
 script_directory = os.path.dirname(os.path.abspath(__file__))
 dataset_path = os.path.join(script_directory, "mirdata")
 cpss_model_path = os.path.join(script_directory, "models","cpss","cpss_sevenths.npy")
@@ -35,8 +35,7 @@ def postfilter(estimation_matrix):
     # postfiltering using HMM 
     if params.get("use_chord_statistics"):
         # load pretrained state transition probability matrix or use uniform state transition
-        model_path = "/home/max/ET-TI/Masterarbeit/chord-recognition/models/state_transitions/sevenths_20.npy"
-        A = np.load(model_path,allow_pickle=True)
+        A = np.load(hmm_model_path,allow_pickle=True)
     else:
         A = features.uniform_transition_matrix(0.2,len(labels)) 
     # compute quasi-normalized likelihood matrix   
@@ -54,7 +53,7 @@ def transcribeCPSS(filepath,data,metadata,classifier):
     stable_regions, hcdf = classifier.computeStableRegions(chroma)
 
     # apply prefilter
-    chroma = features.applyPrefilter(t_chroma,chroma,"median",N=7)
+    chroma = features.applyPrefilter(t_chroma,chroma,"median",N=params.get("N",11))
 
     data["chroma"] = (chroma,{"hop_length":2048,"fs":22050})
     data["hcdf"] = (hcdf,{"info":"harmonic change detection function"})
@@ -90,18 +89,6 @@ def transcribeCPSS(filepath,data,metadata,classifier):
         
         refined_estimation_matrix[:, i0:i1] = 0.0
         refined_estimation_matrix[index, i0:i1] = 1.0
-
-        # use templates for comparison
-        try:
-            templates_estimation_matrix[:, i0:i1] = features.computeCorrelation(chroma_vector,templates,inner_product=False)
-        except ValueError: # chroma_vector contains only NaN's
-            continue
-    # set No chord in regions with silence
-    norm = np.sum(chroma,axis=0)
-    refined_estimation_matrix[:,norm < 0.1] = 0.0
-    refined_estimation_matrix[-1,norm < 0.1] = 1.0
-    estimation_matrix_templates[:,norm < 0.1] = 0.0
-    estimation_matrix_templates[-1,norm < 0.1] = 1.0
 
     # postfiltering using HMM 
     smoothed_estimation_matrix_templates = postfilter(estimation_matrix_templates)
