@@ -6,7 +6,6 @@ import features
 import numpy as np
 import h5py
 from tqdm import tqdm
-import pitchspace
 
 # create a default path 
 script_directory = os.path.dirname(os.path.abspath(__file__))
