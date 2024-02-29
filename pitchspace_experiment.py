@@ -88,7 +88,7 @@ def transcribeCPSS(filepath,data,metadata,classifier):
             key_index = None
         # classify an average chromavector
         chroma_vector = np.average(chroma[:, i0:i1], axis=1).reshape((12,1))
-        chroma_vector = chroma_vector / np.sum(chroma_vector) # l1-normalization is necessary
+        chroma_vector = chroma_vector / (np.sum(chroma_vector)+features.EPS) # l1-normalization is necessary
         
         # use pitchspace to estimate chord in stable region
         index,_ = classifier.classify(chroma_vector,key_index)
@@ -99,8 +99,11 @@ def transcribeCPSS(filepath,data,metadata,classifier):
         estimation_matrix_cpss[index, i0:i1] = 1.0
 
         # as a comparison, estimate the chord with templates
-        estimation_matrix_stableregions_templates[:, i0:i1] = features.computeCorrelation(chroma_vector,templates)
-
+        try:
+            estimation_matrix_stableregions_templates[:, i0:i1] = features.computeCorrelation(chroma_vector,templates)
+        except ValueError as e:
+            print(e) # bug: invalid chroma_vector contains NaN's -> do not update estimation in this region
+            continue
     # postfiltering using HMM 
     estimation_matrix_templates_smoothed = postfilter(estimation_matrix_templates)
     estimation_matrix_cpss_smoothed = postfilter(estimation_matrix_cpss)
