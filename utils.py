@@ -34,7 +34,11 @@ pitch_classes = [
 ]
 """A sorted list of Pitch classes: [C, C#/Db, .. , A#, B]"""
 
-enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#","G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
+enharmonic_notes = {"C#":"Db","Db":"C#","D#":"Eb","Eb":"D#","F#":"Gb","Gb":"F#",
+                    "G#":"Ab","Ab":"G#","A#":"Bb","Bb":"A#","B#":"C","C":"B#"}
+
+NO_CHORD = np.random.random((12,1)) * np.finfo(float).eps
+"""No Chord template: initialized at random with small values"""
 
 def loadAudiofile(filepath,fs=22050,**kwargs):
     """load audio signal"""
@@ -62,7 +66,6 @@ def loadChordAnnotations(annotationpath,time_interval=None):
         return np.asarray(new_intervals),new_labels
     except FileNotFoundError:
         raise FileNotFoundError(f"Incorrect path! could not load annotation: {annotationpath}")
-
 
 def timeVector(N,t_start=0,t_stop=None,hop_length=512,sr=22050):
     if t_stop is None:
@@ -145,9 +148,8 @@ def createChordTemplates(template_type="majmin"):
             templates[:,chord_index] = np.roll(template,pitch.pitch_class_index)
             chord_labels.append(f"{pitch.name}:{q}")
             chord_index += 1
-    for i in range(0,12,2):
-        templates[i,chord_index] = 1/6
-
+    
+    templates[:,chord_index] = NO_CHORD
     chord_labels.append("N")
     return templates,chord_labels
 
@@ -414,7 +416,6 @@ def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
 
     ellipse.set_transform(transf + ax.transData)
     return ax.add_patch(ellipse)
-
 
 def getFscoreResults(filepath,model="stable_cpss",alphabet="majmin"):
     results = {}
