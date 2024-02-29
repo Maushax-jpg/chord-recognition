@@ -5,12 +5,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from collections import namedtuple
-import pitchspace
 from matplotlib.patches import Ellipse
 import h5py
 import matplotlib.transforms as transforms
 from scipy.stats import wilcoxon
 from dataloader import OUTLIERS
+import pitchspace
 
 PitchClass = namedtuple('PitchClass','name pitch_class_index chromatic_index num_accidentals accident')
 """ 
