@@ -188,13 +188,24 @@ def plotChordAnnotations(ax,intervals,labels,time_interval=(0,10),y_0=0):
         # skip labels that do not overlap time interval 
         if intervals[i,1] < time_interval[0] or intervals[i,0] > time_interval[1]:
             continue
+        color = getColor(label)
+        if label.endswith(":maj"):
+            label = label[:-4]
+        elif label.endswith(":min"):
+            label = label[:-4] + "m"
+
         # set start position of rectangular patch
         t_start = max(intervals[i,0],time_interval[0])
         t_stop = min(intervals[i,1],time_interval[1])
-        rect = Rectangle((t_start, y_0),t_stop - t_start , 1.4, linewidth=1, edgecolor="k", facecolor=getColor(label))
+        rect = Rectangle((t_start, y_0),t_stop - t_start , 1.4, linewidth=1, edgecolor="k", facecolor=color)
         ax.add_patch(rect)
+        if label == "N":
+            continue    
         if t_stop - t_start > 0.5:
             ax.text(t_start+ (t_stop - t_start)/2, y_0 + 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=9, color='k')
+        else:
+            ax.text(t_start+ (t_stop - t_start)/2, y_0 + 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=7, color='k')
+
     ax.set_xlim(time_interval)
 
 def plotSSM(ax,time_vector,S,time_interval=None,cmap="viridis"):
