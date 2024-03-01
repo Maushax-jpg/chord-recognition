@@ -12,13 +12,12 @@ import librosa.display
 trackdata = namedtuple('track','track_id dset name')
 """named tuple to store track specific metadata"""
 
-experiments =  [("source separation",["source_separation_none.hdf5","source_separation_vocals.hdf5",
-                                     "source_separation_drums.hdf5","source_separation_both.hdf5"]),
+experiments =  [("source separation",["source_separation_both.hdf5", "source_separation_drums.hdf5",
+                                      "source_separation_vocals.hdf5", "source_separation_none.hdf5"]),
                 ("prefilter",["prefilter_rp.hdf5","prefilter_median.hdf5"]),
                 ("distance metrics",["distance_measure.hdf5"]),
                 ("pitchspace",["crp_pitchspace.hdf5"]),
                 ("deepchroma",["dcp_pitchspace.hdf5","dcp_madmom.hdf5"])]
-
 
 
 def load_tracklist(filepath):
@@ -169,7 +168,7 @@ class visualizationApp():
             fig.colorbar(img,cax=ax_21)
             i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
             ax_3.plot(t_chroma[i0:i1],hcdf[i0:i1])
-            self.align_time_axes([ax_1,ax_2,ax_3])
+            self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
         else:
             # plot cqt
             i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
@@ -185,10 +184,10 @@ class visualizationApp():
                                         vmax=0)
             cbar = fig.colorbar(img,cax=ax_31)
             cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
-            self.align_time_axes([ax_1,ax_2,ax_3])
+            self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
 
     def plot_source_separation_results(self,*args):
-        t_chroma,cqt,chroma = self.chromadata
+        t_chroma,cqt,chroma,_ = self.chromadata
         # select chromadata / correlation or whatever
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
 
@@ -204,7 +203,7 @@ class visualizationApp():
             # plot prefiltered chromagram
             img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
             fig.colorbar(img,cax=ax_21)
-            self.align_time_axes([ax_1,ax_2])
+            self.align_time_axes([ax_1,ax_2],time_interval)
         else:
             # plot prefiltered chromagram
             img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
@@ -223,14 +222,14 @@ class visualizationApp():
                                         vmax=0)
             cbar = fig.colorbar(img,cax=ax_31)
             cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
-            self.align_time_axes([ax_1,ax_2,ax_3])
+            self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
 
         fig.tight_layout(h_pad=0.1,w_pad=0.1,pad=0.3)
         self.output_handle.update(fig)
 
     def plot_prefilter_results(self,*args):
         plt.close("all")
-        t_chroma,_,chroma = self.chromadata[0]
+        t_chroma,_,chroma,_ = self.chromadata[0]
         _,_,chroma_median = self.chromadata[1]
 
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
@@ -345,13 +344,13 @@ class visualizationApp():
         elif self.dropdown_resultfile.label == "distance metrics":
             self.plot_distance_metric_results()
         elif self.dropdown_resultfile.label == "pitchspace":
-            self.plot_distance_metric_results()
+            self.plot_pitchspace_results()
 
     def load_track(self):
         """load transcriptions and chromadata depending on selected experiment"""
         if self.dropdown_resultfile.label == "source separation":
             self.transcriptions = []
-            self.chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[0],
+            self.chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[-1],
                                 self.dropdown_id.value,self.dropdown_dataset.value,
                                 "majmin_intervals","majmin_labels")
             self.transcriptions.append(("mix",intervals,labels))
@@ -389,6 +388,7 @@ class visualizationApp():
                     "sevenths_intervals_inner_product","sevenths_labels_inner_product")
             self.transcriptions.append(('inner_product',intervals,labels))
             self.updateControls(self.chromadata[0][-1], self.chromadata[1])
+            return
         elif self.dropdown_resultfile.label == "pitchspace":
             self.transcriptions = []
             self.chromadata, self.ground_truth,intervals,labels = load_trackdata(self.filepaths[0],
@@ -404,7 +404,7 @@ class visualizationApp():
                     self.dropdown_id.value,self.dropdown_dataset.value,
                     "intervals_stableregions_cpss","labels_stableregions_cpss")
             self.transcriptions.append(('stable regions',intervals_corr,labels_corr))
-
+            return
     def updateControls(self,t_max,cqt):
         """update T-slider and CQT button"""
         self.t_start_slider.max = t_max - self.delta_t.value
