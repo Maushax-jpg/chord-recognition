@@ -419,6 +419,7 @@ def computeStatistics(data):
 
 def getFscoreResults(filepath,alphabet="majmin",printMetadata=False):
     results = {"combined":[]}
+    track_list = []
     with h5py.File(filepath,"r") as file:
         text = "----Transcription Metadata----\n"
         for key,value in file.attrs.items():
@@ -431,9 +432,10 @@ def getFscoreResults(filepath,alphabet="majmin",printMetadata=False):
                 subgrp = file[f"{dset}/{subgrp_name}"]
                 if subgrp.attrs.get("name") not in OUTLIERS:
                     f_scores.append(subgrp.attrs.get(f"{alphabet}_f"))
+                    track_list.append(subgrp.attrs.get("name"))
             results[dset] = f_scores
             results["combined"] += f_scores
-    return results
+    return results,track_list
 
 
 def wilcoxonTest(delta):

@@ -152,6 +152,7 @@ class visualizationApp():
         self.output_handle = display.display(ipywidgets.Output(),display_id=True)
 
     def plot_pitchspace_results(self,*args):
+        plt.close("all")
         t_chroma,cqt,chroma,hcdf = self.chromadata
         # select chromadata / correlation or whatever
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
@@ -185,6 +186,9 @@ class visualizationApp():
             cbar = fig.colorbar(img,cax=ax_31)
             cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
             self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
+        
+        fig.tight_layout(h_pad=0.1,w_pad=0.1,pad=0.3)
+        self.output_handle.update(fig)
 
     def plot_source_separation_results(self,*args):
         t_chroma,cqt,chroma,_ = self.chromadata
@@ -230,7 +234,7 @@ class visualizationApp():
     def plot_prefilter_results(self,*args):
         plt.close("all")
         t_chroma,_,chroma,_ = self.chromadata[0]
-        _,_,chroma_median = self.chromadata[1]
+        _,_,chroma_median,_ = self.chromadata[1]
 
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
 
@@ -364,17 +368,18 @@ class visualizationApp():
         elif self.dropdown_resultfile.label == "prefilter":
             self.transcriptions = []
             self.chromadata = []
+            median_chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[1],
+                    self.dropdown_id.value,self.dropdown_dataset.value,
+                    "majmin_intervals","majmin_labels")
+            self.chromadata.append(median_chromadata)
+            self.transcriptions.append(('Median',intervals,labels))
+            
             rp_chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[0],
                     self.dropdown_id.value,self.dropdown_dataset.value,
                     "majmin_intervals","majmin_labels")
             self.chromadata.append(rp_chromadata)
             self.transcriptions.append(('RP',intervals,labels))
 
-            median_chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[1],
-                    self.dropdown_id.value,self.dropdown_dataset.value,
-                    "majmin_intervals","majmin_labels")
-            self.chromadata.append(median_chromadata)
-            self.transcriptions.append(('Median',intervals,labels))
             self.updateControls(self.chromadata[0][0][-1], self.chromadata[0][1])
             return
         elif self.dropdown_resultfile.label == "distance metrics":
