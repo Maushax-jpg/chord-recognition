@@ -12,12 +12,13 @@ import librosa.display
 trackdata = namedtuple('track','track_id dset name')
 """named tuple to store track specific metadata"""
 
-experiments =  [("source separation",["source_separation_both.hdf5", "source_separation_drums.hdf5",
-                                      "source_separation_vocals.hdf5", "source_separation_none.hdf5"]),
+experiments =  [("source separation vocals",["source_separation_vocals.hdf5", "source_separation_none.hdf5"]),
+                ("source separation drums",["source_separation_drums.hdf5", "source_separation_none.hdf5"]),
+                ("source separation both",["source_separation_both.hdf5", "source_separation_none.hdf5"]),
                 ("prefilter",["prefilter_rp.hdf5","prefilter_median.hdf5"]),
                 ("distance metrics",["distance_measure.hdf5"]),
                 ("pitchspace",["crp_pitchspace.hdf5"]),
-                ("deepchroma",["dcp_pitchspace.hdf5","dcp_madmom.hdf5"])]
+                ("deepchroma",["crp_pitchspace.hdf5", "dcp_pitchspace.hdf5","dcp_madmom.hdf5"])]
 
 
 def load_tracklist(filepath):
@@ -114,11 +115,6 @@ class visualizationApp():
 
             layout=ipywidgets.Layout(width='20%'))
         
-        self.plot_cqt = ipywidgets.Checkbox(
-            False,
-            description="CQT",
-            disabled=True)
-        
         # create layout
         self.filepaths = ipywidgets.HBox(
             [
@@ -135,8 +131,7 @@ class visualizationApp():
         self.controls = ipywidgets.HBox(
             [
                 self.t_start_slider,
-                self.delta_t,
-                self.plot_cqt,
+                self.delta_t
             ]   
         )
 
@@ -147,7 +142,6 @@ class visualizationApp():
         self.dropdown_id.observe(self.plot_results,'value')
         self.t_start_slider.observe(self.plot_results,"value")
         self.delta_t.observe(self.plot_results,"value")
-        self.plot_cqt.observe(self.plot_results,"value")
         display.display(self.filepaths,self.selection,self.controls)
         self.output_handle = display.display(ipywidgets.Output(),display_id=True)
 
@@ -157,77 +151,57 @@ class visualizationApp():
         # select chromadata / correlation or whatever
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
 
-        if not self.plot_cqt.value:
-            fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,5,3),width_ratios=(20,.3),figsize=(7,5))
-        else:
-            fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,3,9),width_ratios=(20,.3),figsize=(7,9))
+        fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,2,9),width_ratios=(20,.3),figsize=(7,9))
         # create chord annotation plot
         self.plot_annotations(ax_1, ax_11, time_interval)
-        if not self.plot_cqt.value:
-            # plot prefiltered chromagram
-            img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
-            fig.colorbar(img,cax=ax_21)
-            i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
-            ax_3.plot(t_chroma[i0:i1],hcdf[i0:i1])
-            self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
-        else:
-            # plot cqt
-            i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
-            img = librosa.display.specshow(librosa.amplitude_to_db(cqt[:,i0:i1],ref=np.max(cqt[:,i0:i1])),
-                                        x_coords=t_chroma[i0:i1],
-                                        x_axis="time",
-                                        y_axis='cqt_hz',
-                                        cmap="viridis",
-                                        fmin=librosa.midi_to_hz(36),
-                                        bins_per_octave=12,
-                                        ax=ax_3,
-                                        vmin=-70,
-                                        vmax=0)
-            cbar = fig.colorbar(img,cax=ax_31)
-            cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
-            self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
-        
+
+         # plot prefiltered chromagram
+        img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
+        fig.colorbar(img,cax=ax_21)
+        i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
+        # ax_3.plot(t_chroma[i0:i1],hcdf[i0:i1])
+        self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
+        # plot cqt
+        i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
+        img = librosa.display.specshow(librosa.amplitude_to_db(cqt[:,i0:i1],ref=np.max(cqt[:,i0:i1])),
+                                    x_coords=t_chroma[i0:i1],
+                                    x_axis="time",
+                                    y_axis='cqt_note',
+                                    cmap="viridis",
+                                    fmin=librosa.midi_to_hz(36),
+                                    bins_per_octave=12,
+                                    ax=ax_3,
+                                    vmin=-70,
+                                    vmax=0)
+        cbar = fig.colorbar(img,cax=ax_31)
+        ax_3.set_ylim(librosa.midi_to_hz(36),librosa.midi_to_hz(102))
+        cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
+        self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
+    
         fig.tight_layout(h_pad=0.1,w_pad=0.1,pad=0.3)
         self.output_handle.update(fig)
 
     def plot_source_separation_results(self,*args):
-        t_chroma,cqt,chroma,_ = self.chromadata
-        # select chromadata / correlation or whatever
+        plt.close("all")
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
-
-        if not self.plot_cqt.value:
-            fig,((ax_1,ax_11),(ax_2,ax_21)) = plt.subplots(2,2,height_ratios=(3,5),width_ratios=(20,.3),figsize=(7,5))
-        else:
-            fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,3,9),width_ratios=(20,.3),figsize=(7,9))
+        fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,3,9),width_ratios=(20,.3),figsize=(7,9))
+        
         # create chord annotation plot
-
         self.plot_annotations(ax_1, ax_11, time_interval)
+        
+        # plot prefiltered chromagram
+        img = utils.plotChromagram(ax_2,self.chromadata[0],self.chromadata[2],time_interval=time_interval)
+        fig.colorbar(img,cax=ax_21)
 
-        if not self.plot_cqt.value:
-            # plot prefiltered chromagram
-            img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
-            fig.colorbar(img,cax=ax_21)
-            self.align_time_axes([ax_1,ax_2],time_interval)
-        else:
-            # plot prefiltered chromagram
-            img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
-            fig.colorbar(img,cax=ax_21)
-            # plot cqt
-            i0,i1 = utils.getTimeIndices(t_chroma,time_interval)
-            img = librosa.display.specshow(librosa.amplitude_to_db(cqt[:,i0:i1],ref=np.max(cqt[:,i0:i1])),
-                                        x_coords=t_chroma[i0:i1],
-                                        x_axis="time",
-                                        y_axis='cqt_hz',
-                                        cmap="viridis",
-                                        fmin=librosa.midi_to_hz(36),
-                                        bins_per_octave=12,
-                                        ax=ax_3,
-                                        vmin=-70,
-                                        vmax=0)
-            cbar = fig.colorbar(img,cax=ax_31)
-            cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
-            self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
-
+        # plot cqt
+        i0,i1 = utils.getTimeIndices(self.chromadata[0],time_interval)
+        img = librosa.display.specshow(librosa.amplitude_to_db(self.chromadata[1][:,i0:i1],
+            ref=np.max(self.chromadata[1][:,i0:i1])),ax=ax_3,
+            x_coords=self.chromadata[0][i0:i1],x_axis="time",y_axis='cqt_note',cmap="viridis",
+            fmin=librosa.midi_to_hz(36),bins_per_octave=12, vmin=-70,vmax=0)
+        cbar = fig.colorbar(img,cax=ax_31)
+        cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
+        self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
         fig.tight_layout(h_pad=0.1,w_pad=0.1,pad=0.3)
         self.output_handle.update(fig)
 
@@ -244,13 +218,12 @@ class visualizationApp():
         self.plot_annotations(ax_1,ax_11,time_interval)
 
         # plot prefiltered chromagrams
-        img = utils.plotChromagram(ax_2,t_chroma,chroma,time_interval=time_interval)
+        img = utils.plotChromagram(ax_2,t_chroma,chroma_median,time_interval=time_interval)
         fig.colorbar(img,cax=ax_21)
         ax_2.set_ylabel("RP prefilter")
-        img = utils.plotChromagram(ax_3,t_chroma,chroma_median,time_interval=time_interval)
+        img = utils.plotChromagram(ax_3,t_chroma,chroma,time_interval=time_interval)
         fig.colorbar(img,cax=ax_31)
         ax_3.set_ylabel("Median prefilter")
-
         self.align_time_axes([ax_1,ax_2,ax_3],time_interval)
         fig.tight_layout(w_pad=0.1,pad=0.3)
         self.output_handle.update(fig)
@@ -259,41 +232,62 @@ class visualizationApp():
         plt.close("all")
         time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
     
-        if not self.plot_cqt.value:
-            fig,((ax_1,ax_11),(ax_2,ax_21)) = plt.subplots(2,2,height_ratios=(3,5),width_ratios=(20,.3),figsize=(7,4))
-        else:
-            fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,9,3),width_ratios=(20,.3),figsize=(7,9))
-        
+        fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31)) = plt.subplots(3,2,height_ratios=(3,9,3),width_ratios=(20,.3),figsize=(7,9))
         self.plot_annotations(ax_1,ax_11,time_interval)
 
-        if not self.plot_cqt.value:
-            # plot prefiltered chromagram
-            img = utils.plotChromagram(ax_2,self.chromadata[0],self.chromadata[2],time_interval=time_interval)
-            fig.colorbar(img,cax=ax_21)
-            self.align_time_axes([ax_1, ax_2],time_interval)
-        else:
-            # plot prefiltered chromagram
-            img = utils.plotChromagram(ax_3,self.chromadata[0],self.chromadata[2],time_interval=time_interval)
-            fig.colorbar(img,cax=ax_31)
-            # plot cqt
-            i0,i1 = utils.getTimeIndices(self.chromadata[0],time_interval)
-            img = librosa.display.specshow(librosa.amplitude_to_db(self.chromadata[1][:,i0:i1],ref=np.max(self.chromadata[1][:,i0:i1])),
-                                        x_coords=self.chromadata[0][i0:i1],
-                                        x_axis="time",
-                                        y_axis='cqt_note',
-                                        cmap="viridis",
-                                        fmin=librosa.midi_to_hz(36),
-                                        bins_per_octave=12,
-                                        ax=ax_2,
-                                        vmin=-70,
-                                        vmax=0)
-            cbar = fig.colorbar(img,cax=ax_21)
-            cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
-            ax_2.set_ylabel("tuned Pitchgram - CQT")
-            self.align_time_axes([ax_1, ax_2, ax_3],time_interval)
+        # plot prefiltered chromagram
+        img = utils.plotChromagram(ax_3,self.chromadata[0],self.chromadata[2],time_interval=time_interval)
+        fig.colorbar(img,cax=ax_31)
+        # plot cqt
+        i0,i1 = utils.getTimeIndices(self.chromadata[0],time_interval)
+        img = librosa.display.specshow(librosa.amplitude_to_db(self.chromadata[1][:,i0:i1],ref=np.max(self.chromadata[1][:,i0:i1])),
+            x_coords=self.chromadata[0][i0:i1],x_axis="time",y_axis='cqt_note',cmap="viridis",
+            fmin=librosa.midi_to_hz(36),bins_per_octave=12,ax=ax_2,vmin=-70,vmax=0)
+        ax_2.set_ylim(librosa.midi_to_hz(24),librosa.midi_to_hz(104))
+        cbar = fig.colorbar(img,cax=ax_21)
+        cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
+        ax_2.set_ylabel("tuned Pitchgram - CQT")
+        self.align_time_axes([ax_1, ax_2, ax_3],time_interval)
 
         fig.tight_layout(w_pad=0.1,pad=0.3)
         self.output_handle.update(fig)
+
+    def plot_deepchroma_results(self,*args):
+        plt.close("all")
+        t_chroma_crp,cqt,crp,_ = self.chromadata[0]
+        t_chroma_deepchroma,_,deepchroma,_ = self.chromadata[1]
+        time_interval = (self.t_start_slider.value, self.t_start_slider.value + self.delta_t.value)
+
+        fig,((ax_1,ax_11),(ax_2,ax_21),(ax_3,ax_31),(ax_4,ax_41)) = plt.subplots(4,2,height_ratios=(1,1,1,3),
+                                                                    width_ratios=(20,.3),
+                                                                    figsize=(7,9))
+        self.plot_annotations(ax_1,ax_11,time_interval)
+
+        # plot chromagrams
+        img = utils.plotChromagram(ax_2,t_chroma_deepchroma,deepchroma,time_interval=time_interval)
+        fig.colorbar(img,cax=ax_21)
+        ax_2.set_ylabel("deep chroma")
+
+        img = utils.plotChromagram(ax_3,t_chroma_crp,crp,time_interval=time_interval)
+        fig.colorbar(img,cax=ax_31)
+        ax_3.set_ylabel("CRP")
+
+        # plot cqt
+        i0,i1 = utils.getTimeIndices(t_chroma_crp,time_interval)
+        img = librosa.display.specshow(librosa.amplitude_to_db(cqt[:,i0:i1],
+            ref=np.max(cqt[:,i0:i1])),ax=ax_4,
+            x_coords=t_chroma_crp[i0:i1],x_axis="time",y_axis='cqt_note',cmap="viridis",
+            fmin=librosa.midi_to_hz(36),bins_per_octave=12, vmin=-70,vmax=0)
+        cbar = fig.colorbar(img,cax=ax_41)
+        ax_4.set_ylim(librosa.midi_to_hz(36),librosa.midi_to_hz(102))
+        cbar.ax.set_ylabel("dB", rotation=-90, va="bottom")
+
+        # align time axes and display plot
+        self.align_time_axes([ax_1,ax_2,ax_3,ax_4],time_interval)
+        fig.tight_layout(w_pad=0.1,pad=0.3)
+
+        self.output_handle.update(fig)
+
 
     def plot_annotations(self, ax1, ax2, time_interval):
         # create chord annotation plot
@@ -341,7 +335,7 @@ class visualizationApp():
 
     def plot_results(self,*args):
         """wrapper function for experiment specific plots"""
-        if self.dropdown_resultfile.label == "source separation":
+        if self.dropdown_resultfile.label.startswith("source separation"):
             self.plot_source_separation_results()
         elif self.dropdown_resultfile.label == "prefilter":
             self.plot_prefilter_results()
@@ -349,20 +343,22 @@ class visualizationApp():
             self.plot_distance_metric_results()
         elif self.dropdown_resultfile.label == "pitchspace":
             self.plot_pitchspace_results()
+        elif self.dropdown_resultfile.label == "deepchroma":
+            self.plot_deepchroma_results()
 
     def load_track(self):
         """load transcriptions and chromadata depending on selected experiment"""
-        if self.dropdown_resultfile.label == "source separation":
+        if self.dropdown_resultfile.label.startswith("source separation"):
             self.transcriptions = []
-            self.chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[-1],
+            self.chromadata,self.ground_truth,intervals,labels = load_trackdata(self.filepaths[0],
+                                self.dropdown_id.value,self.dropdown_dataset.value,
+                                "majmin_intervals","majmin_labels")
+            self.transcriptions.append((f'-{self.dropdown_resultfile.label.split(" ")[-1]}', intervals, labels))
+
+            _,_,intervals,labels = load_trackdata(self.filepaths[1],
                                 self.dropdown_id.value,self.dropdown_dataset.value,
                                 "majmin_intervals","majmin_labels")
             self.transcriptions.append(("mix",intervals,labels))
-            for i,text in enumerate(["vocals","drums","both"]):
-                _,_,intervals,labels = load_trackdata(self.filepaths[i],
-                                    self.dropdown_id.value,self.dropdown_dataset.value,
-                                    "majmin_intervals","majmin_labels")
-                self.transcriptions.append((text,intervals,labels))
             self.updateControls(self.chromadata[0][-1], self.chromadata[1])
             return
         elif self.dropdown_resultfile.label == "prefilter":
@@ -396,7 +392,7 @@ class visualizationApp():
             return
         elif self.dropdown_resultfile.label == "pitchspace":
             self.transcriptions = []
-            self.chromadata, self.ground_truth,intervals,labels = load_trackdata(self.filepaths[0],
+            _, _,intervals,labels = load_trackdata(self.filepaths[0],
                     self.dropdown_id.value,self.dropdown_dataset.value,
                     "intervals_templates","labels_templates")
             self.transcriptions.append(('Templates',intervals,labels))
@@ -409,19 +405,44 @@ class visualizationApp():
                     self.dropdown_id.value,self.dropdown_dataset.value,
                     "intervals_stableregions_cpss","labels_stableregions_cpss")
             self.transcriptions.append(('stable regions',intervals_corr,labels_corr))
-            return
+        elif self.dropdown_resultfile.label == "deepchroma":
+            self.transcriptions = []
+            self.chromadata = []
+
+            # load CRP chroma
+            crp_chroma, _,intervals,labels = load_trackdata(self.filepaths[0],
+                    self.dropdown_id.value,self.dropdown_dataset.value,
+                    "intervals_templates","labels_templates")
+            self.chromadata.append(crp_chroma)
+
+            # load Template transcription with deepchroma
+            _, _,intervals,labels = load_trackdata(self.filepaths[1],
+                    self.dropdown_id.value,self.dropdown_dataset.value,
+                    "est_templates_intervals","est_templates_labels")
+            self.transcriptions.append(('Templates',intervals,labels))
+
+            # load cpss transcription with deepchroma
+            _, _,intervals,labels = load_trackdata(self.filepaths[1],
+                    self.dropdown_id.value,self.dropdown_dataset.value,
+                    "est_cpss_intervals","est_cpss_labels")
+            self.transcriptions.append(('CPSS',intervals,labels))
+
+            # load madmom transcription
+            deepchroma, self.ground_truth,intervals,labels = load_trackdata(self.filepaths[2],
+                    self.dropdown_id.value,self.dropdown_dataset.value,
+                    "majmin_intervals","majmin_labels")
+            self.transcriptions.append(('DCP',intervals,labels))
+            self.chromadata.append(deepchroma)
+
+            # update controls
+            self.updateControls(self.chromadata[0][0][-1], self.chromadata[0][1])
+
     def updateControls(self,t_max,cqt):
         """update T-slider and CQT button"""
         self.t_start_slider.max = t_max - self.delta_t.value
         self.t_start_slider.disabled = False
         self.delta_t.disabled = False
-        # check if CQT is available
-        if cqt.size:
-            self.plot_cqt.disabled = False
-        else:
-            self.plot_cqt.disabled = True    
-        return
-    
+
     def update_dataset(self,*args):
         """callback function for dropdown_dataset"""
         self.update_dropdown_id_options() # load new track_ids when dataset changed

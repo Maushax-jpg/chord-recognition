@@ -203,8 +203,8 @@ def plotChordAnnotations(ax,intervals,labels,time_interval=(0,10),y_0=0):
             continue    
         if t_stop - t_start > 0.5:
             ax.text(t_start+ (t_stop - t_start)/2, y_0 + 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=9, color='k')
-        else:
-            ax.text(t_start+ (t_stop - t_start)/2, y_0 + 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=7, color='k')
+        # else:
+        #     ax.text(t_start+ (t_stop - t_start)/2, y_0 + 0.6, label,verticalalignment="center",horizontalalignment='center', fontsize=7, color='k')
 
     ax.set_xlim(time_interval)
 
