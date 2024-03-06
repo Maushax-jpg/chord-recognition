@@ -46,12 +46,24 @@ def loadAudiofile(filepath,fs=22050,**kwargs):
         raise FileNotFoundError(f"could not load file: {filepath}")
     return y
 
-def loadChordAnnotations(annotationpath):
+def loadChordAnnotations(annotationpath,time_interval=None):
     try:
         intervals, labels = mir_eval.io.load_labeled_intervals(annotationpath)
+        if time_interval is None:
+            return intervals, labels
+        new_labels = []
+        new_intervals = []
+        for i,label in enumerate(labels):
+            # skip labels that do not overlap time interval 
+            if intervals[i,1] < time_interval[0] or intervals[i,0] > time_interval[1]:
+                continue
+            new_labels.append(label)
+            # crop interval if needed 
+            new_intervals.append([max(intervals[i,0],time_interval[0]), min(intervals[i,1],time_interval[1])])
+        return np.asarray(new_intervals),new_labels
     except FileNotFoundError:
         raise FileNotFoundError(f"Incorrect path! could not load annotation: {annotationpath}")
-    return intervals, labels
+
 
 def timeVector(N,t_start=0,t_stop=None,hop_length=512,sr=22050):
     if t_stop is None:
@@ -158,9 +170,9 @@ def getTimeIndices(timevector,time_interval):
             i1 = min(i1, timevector.shape[0] - 1)
     return i0,i1
 
-def plotChromagram(ax,t_chroma,chroma,time_interval=None):
+def plotChromagram(ax,t_chroma,chroma,time_interval=None,cmap="Reds"):
     i0,i1 = getTimeIndices(t_chroma,time_interval)
-    img = librosa.display.specshow(chroma[:,i0:i1],x_coords=t_chroma[i0:i1],x_axis="time", y_axis='chroma', cmap="Reds", ax=ax,vmin=0, vmax=np.max(chroma[:,i0:i1]))
+    img = librosa.display.specshow(chroma[:,i0:i1],x_coords=t_chroma[i0:i1],x_axis="time", y_axis='chroma', cmap=cmap, ax=ax,vmin=0, vmax=np.max(chroma[:,i0:i1]))
     return img
 
 def plotCQT(ax,t_chroma,cqt,time_interval=None):
