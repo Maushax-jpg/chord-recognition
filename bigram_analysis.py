@@ -97,4 +97,4 @@ if __name__ == "__main__":
 
     # save to file
     outputpath = os.path.join(script_directory, "models","state_transitions",f"A_{args.alphabet}.npy")
-    np.save(outputpath, state_transition_matrix)
+    #np.save(outputpath, state_transition_matrix)
